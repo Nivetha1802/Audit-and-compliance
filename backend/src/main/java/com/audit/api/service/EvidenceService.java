@@ -28,6 +28,7 @@ public class EvidenceService {
     private final DocumentRepository documentRepository;
     private final TransactionRepository transactionRepository;
     private final SecurityUtils securityUtils;
+    private final BankValidationService bankValidationService;
 
     @Autowired
     public EvidenceService(ChecklistRepository checklistRepository,
@@ -36,7 +37,8 @@ public class EvidenceService {
                            ChecklistItemTemplateRepository templateItemRepository,
                            DocumentRepository documentRepository,
                            TransactionRepository transactionRepository,
-                           SecurityUtils securityUtils) {
+                           SecurityUtils securityUtils,
+                           BankValidationService bankValidationService) {
         this.checklistRepository = checklistRepository;
         this.checklistItemRepository = checklistItemRepository;
         this.templateRepository = templateRepository;
@@ -44,6 +46,7 @@ public class EvidenceService {
         this.documentRepository = documentRepository;
         this.transactionRepository = transactionRepository;
         this.securityUtils = securityUtils;
+        this.bankValidationService = bankValidationService;
     }
 
     /** Get or create checklist for a transaction, seeding from matching template */
@@ -61,12 +64,13 @@ public class EvidenceService {
             checklist.setOrganizationId(orgId);
             checklist = checklistRepository.save(checklist);
 
-            // Seed items from matching template (by category name)
+            // Seed items from matching template (by category name — supports comma-separated multi-category)
             List<ChecklistTemplate> templates = templateRepository.findByOrganizationId(orgId);
             ChecklistTemplate matched = templates.stream()
-                    .filter(t -> t.getDescription() != null
-                            && tx.getCategoryName() != null
-                            && t.getDescription().equalsIgnoreCase(tx.getCategoryName()))
+                    .filter(t -> t.getDescription() != null && tx.getCategoryName() != null
+                            && java.util.Arrays.stream(t.getDescription().split(","))
+                                .map(String::trim)
+                                .anyMatch(cat -> cat.equalsIgnoreCase(tx.getCategoryName())))
                     .findFirst()
                     .orElse(templates.isEmpty() ? null : templates.get(0));
 
@@ -124,6 +128,14 @@ public class EvidenceService {
         // Recompute checklist completion
         updateChecklistCompletion(item.getChecklistId());
 
+        // Trigger bank validation re-evaluation when evidence is uploaded
+        checklistRepository.findById(item.getChecklistId()).ifPresent(cl ->
+            transactionRepository.findById(cl.getTransactionId()).ifPresent(tx -> {
+                bankValidationService.evaluateBankValidationRequirement(tx);
+                transactionRepository.save(tx);
+            })
+        );
+
         return item;
     }
 
@@ -136,6 +148,15 @@ public class EvidenceService {
         item.setProvided(false);
         item = checklistItemRepository.save(item);
         updateChecklistCompletion(item.getChecklistId());
+
+        // Re-evaluate bank validation since evidence was removed
+        checklistRepository.findById(item.getChecklistId()).ifPresent(cl ->
+            transactionRepository.findById(cl.getTransactionId()).ifPresent(tx -> {
+                bankValidationService.evaluateBankValidationRequirement(tx);
+                transactionRepository.save(tx);
+            })
+        );
+
         return item;
     }
 
@@ -155,9 +176,9 @@ public class EvidenceService {
         Checklist cl = checklistRepository.findByTransactionId(transactionId).orElse(null);
         if (cl == null) return new ReadinessScore(0, 0, 0, false);
 
-        long total     = checklistItemRepository.countByChecklistIdAndMandatory(cl.getId(), true);
-        long provided  = checklistItemRepository.countByChecklistIdAndMandatoryAndProvided(cl.getId(), true, true);
-        int pct        = total == 0 ? 100 : (int) Math.round((provided * 100.0) / total);
+        long total    = checklistItemRepository.countByChecklistIdAndMandatory(cl.getId(), true);
+        long provided = checklistItemRepository.countByChecklistIdAndMandatoryAndProvided(cl.getId(), true, true);
+        int pct       = total == 0 ? 100 : (int) Math.round((provided * 100.0) / total);
         return new ReadinessScore((int) total, (int) provided, pct, cl.isCompleted());
     }
 

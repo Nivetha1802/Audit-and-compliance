@@ -30,18 +30,21 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final AuthenticationManager authenticationManager;
+    private final DefaultCategorySeeder categorySeeder;
 
     @Autowired
     public AuthService(UserRepository userRepository,
                        OrganizationRepository organizationRepository,
                        PasswordEncoder passwordEncoder,
                        JwtService jwtService,
-                       AuthenticationManager authenticationManager) {
+                       AuthenticationManager authenticationManager,
+                       DefaultCategorySeeder categorySeeder) {
         this.userRepository = userRepository;
         this.organizationRepository = organizationRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.authenticationManager = authenticationManager;
+        this.categorySeeder = categorySeeder;
     }
 
     private void validatePassword(String password) {
@@ -72,6 +75,8 @@ public class AuthService {
                         .name(request.getOrganizationName())
                         .build();
                 organization = organizationRepository.save(organization);
+                // Seed default real-estate audit categories for the new org
+                categorySeeder.seedForOrganization(organization.getId());
             }
         } else {
             organization = existingOrg.orElseThrow(() ->
@@ -106,6 +111,7 @@ public class AuthService {
                 .token(jwtToken)
                 .organizationId(organization.getId())
                 .role(user.getRole().name())
+                .fullName(user.getFullName())
                 .organizationName(organization.getName())
                 .setupRequired(setupRequired)
                 .build();
@@ -141,6 +147,7 @@ public class AuthService {
                 .token(jwtToken)
                 .organizationId(user.getOrganizationId())
                 .role(user.getRole().name())
+                .fullName(user.getFullName())
                 .organizationName(organization.getName())
                 .setupRequired(setupRequired)
                 .build();

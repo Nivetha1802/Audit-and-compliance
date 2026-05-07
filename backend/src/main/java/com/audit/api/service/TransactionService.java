@@ -23,14 +23,17 @@ public class TransactionService {
     private final TransactionRepository transactionRepository;
     private final SecurityUtils securityUtils;
     private final CategoryMappingService categoryMappingService;
+    private final BankValidationService bankValidationService;
 
     @Autowired
     public TransactionService(TransactionRepository transactionRepository,
                                SecurityUtils securityUtils,
-                               CategoryMappingService categoryMappingService) {
+                               CategoryMappingService categoryMappingService,
+                               BankValidationService bankValidationService) {
         this.transactionRepository = transactionRepository;
         this.securityUtils = securityUtils;
         this.categoryMappingService = categoryMappingService;
+        this.bankValidationService = bankValidationService;
     }
 
     public List<Transaction> getAllTransactions() {
@@ -42,11 +45,6 @@ public class TransactionService {
                 securityUtils.getCurrentOrganizationId(), projectId);
     }
 
-    /**
-     * Import ledger/accounting CSV.
-     * Expected columns: TxnNo, Date, Description, Debit/Credit, Amount,
-     *                   LedgerName, ProjectCode, Category, Subcategory, Vendor, RefNo
-     */
     public ImportResult importFromCsv(MultipartFile file, UUID projectId) throws Exception {
         UUID orgId = securityUtils.getCurrentOrganizationId();
         List<Transaction> transactions = new ArrayList<>();
@@ -78,10 +76,8 @@ public class TransactionService {
                 tx.setProjectId(projectId);
                 tx.setStatus("PENDING_EVIDENCE");
                 tx.setOrganizationId(orgId);
-
-                // Auto-tag with master categories
                 categoryMappingService.autoTag(tx, orgId);
-
+                bankValidationService.evaluateBankValidationRequirement(tx);
                 transactions.add(tx);
             }
         }
@@ -89,15 +85,6 @@ public class TransactionService {
         return new ImportResult(transactions.size(), skipped);
     }
 
-    /**
-     * Import bank statement CSV and auto-match to existing transactions.
-     * Expected columns: Date, Description, Debit, Credit, Balance, RefNo
-     *
-     * Matching logic: find an existing transaction with same date + amount
-     * (debit → positive amount, credit → positive amount).
-     * If matched → set bankMatched = true, bankRefNo.
-     * If not matched → create a new transaction tagged as bank-only.
-     */
     public BankImportResult importBankStatement(MultipartFile file, UUID projectId) throws Exception {
         UUID orgId = securityUtils.getCurrentOrganizationId();
         List<Transaction> existing = transactionRepository.findByOrganizationIdAndProjectId(orgId, projectId);
@@ -122,11 +109,9 @@ public class TransactionService {
                 BigDecimal credit = parseBigDecimal(data[3].trim());
                 String bankRef = get(data, 5);
 
-                // Amount is whichever is non-zero
                 BigDecimal amount = debit.compareTo(BigDecimal.ZERO) != 0 ? debit : credit;
                 String drCr = debit.compareTo(BigDecimal.ZERO) != 0 ? "Debit" : "Credit";
 
-                // Try to match existing transaction by date + amount
                 Transaction match = existing.stream()
                         .filter(t -> t.getTransactionDate().equals(date)
                                 && t.getAmount().compareTo(amount) == 0
@@ -139,7 +124,6 @@ public class TransactionService {
                     toSave.add(match);
                     matched++;
                 } else {
-                    // Create new unmatched bank transaction
                     Transaction tx = new Transaction();
                     tx.setTransactionDate(date);
                     tx.setDescription(desc);
@@ -147,11 +131,12 @@ public class TransactionService {
                     tx.setAmount(amount);
                     tx.setBankRefNo(bankRef);
                     tx.setBankMatched(false);
-                    tx.setTransactionNumber("BANK-" + (bankRef.isBlank() ? UUID.randomUUID().toString().substring(0, 8) : bankRef));
+                    tx.setTransactionNumber("BANK-" + (bankRef.isBlank()
+                            ? UUID.randomUUID().toString().substring(0, 8) : bankRef));
                     tx.setProjectId(projectId);
                     tx.setStatus("PENDING_EVIDENCE");
                     tx.setOrganizationId(orgId);
-                    categoryMappingService.autoTag(tx, orgId);
+                    bankValidationService.evaluateBankValidationRequirement(tx);
                     toSave.add(tx);
                     created++;
                 }
@@ -164,14 +149,24 @@ public class TransactionService {
     public Transaction updateStatus(UUID id, String status) {
         Transaction tx = transactionRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Transaction not found"));
-        if (!tx.getOrganizationId().equals(securityUtils.getCurrentOrganizationId())) {
+        if (!tx.getOrganizationId().equals(securityUtils.getCurrentOrganizationId()))
             throw new RuntimeException("Unauthorized access");
-        }
         tx.setStatus(status);
+        bankValidationService.evaluateBankValidationRequirement(tx);
         return transactionRepository.save(tx);
     }
 
-    // ── helpers ──
+    public Transaction linkVendor(UUID id, UUID vendorId) {
+        Transaction tx = transactionRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Transaction not found"));
+        if (!tx.getOrganizationId().equals(securityUtils.getCurrentOrganizationId()))
+            throw new RuntimeException("Unauthorized access");
+        tx.setVendorId(vendorId);
+        bankValidationService.evaluateBankValidationRequirement(tx);
+        return transactionRepository.save(tx);
+    }
+
+    // ── helpers ───────────────────────────────────────────────────────────────
 
     private LocalDate parseDate(String s) {
         String[] patterns = {"dd-MM-yyyy", "yyyy-MM-dd", "dd/MM/yyyy", "MM/dd/yyyy", "d-M-yyyy"};
@@ -191,7 +186,7 @@ public class TransactionService {
         return arr.length > idx ? arr[idx].trim() : "";
     }
 
-    // ── result DTOs ──
+    // ── result records ────────────────────────────────────────────────────────
 
     public record ImportResult(int imported, int skipped) {}
     public record BankImportResult(int matched, int created, int skipped) {}

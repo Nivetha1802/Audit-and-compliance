@@ -32,7 +32,6 @@ public class TransactionController {
         return ResponseEntity.ok(transactionService.getTransactionsByProject(projectId));
     }
 
-    /** Import ledger/accounting CSV — auto-tags categories */
     @PostMapping("/import")
     public ResponseEntity<Map<String, Object>> importCsv(
             @RequestParam("file") MultipartFile file,
@@ -45,7 +44,6 @@ public class TransactionController {
         ));
     }
 
-    /** Import bank statement CSV — auto-matches to existing transactions */
     @PostMapping("/import-bank")
     public ResponseEntity<Map<String, Object>> importBankStatement(
             @RequestParam("file") MultipartFile file,
@@ -64,5 +62,12 @@ public class TransactionController {
             @PathVariable UUID id,
             @RequestParam String status) {
         return ResponseEntity.ok(transactionService.updateStatus(id, status));
+    }
+
+    @PatchMapping("/{id}/link-vendor")
+    public ResponseEntity<Transaction> linkVendor(
+            @PathVariable UUID id,
+            @RequestParam UUID vendorId) {
+        return ResponseEntity.ok(transactionService.linkVendor(id, vendorId));
     }
 }

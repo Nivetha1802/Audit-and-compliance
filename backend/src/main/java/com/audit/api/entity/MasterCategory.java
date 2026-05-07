@@ -15,10 +15,10 @@ public class MasterCategory extends BaseEntity {
     private String name;
 
     @Column(name = "parent_id")
-    private UUID parentId; // null = Level 1, non-null = Level 2
+    private UUID parentId; // null = Level 1, non-null = Level 2 or 3
 
     @Column(nullable = false)
-    private int level = 1; // 1 or 2
+    private int level = 1; // 1, 2, or 3
 
     public MasterCategory() {}
 
@@ -28,10 +28,10 @@ public class MasterCategory extends BaseEntity {
         setOrganizationId(organizationId);
     }
 
-    public MasterCategory(String name, UUID parentId, UUID organizationId) {
+    public MasterCategory(String name, UUID parentId, int level, UUID organizationId) {
         this.name = name;
         this.parentId = parentId;
-        this.level = 2;
+        this.level = level;
         setOrganizationId(organizationId);
     }
 

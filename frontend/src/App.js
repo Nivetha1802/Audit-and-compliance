@@ -9,7 +9,10 @@ import Findings from './pages/Findings';
 import OrganizationSetup from './pages/OrganizationSetup';
 import ChecklistTemplates from './pages/ChecklistTemplates';
 import Tasks from './pages/Tasks';
+import AiValidation from './pages/AiValidation';
+import Vendors from './pages/Vendors';
 import Layout from './components/Layout';
+import Evidence from './pages/Evidence';
 import { AuthProvider, useAuth } from './context/AuthContext';
 
 const ProtectedRoute = ({ children }) => {
@@ -25,41 +28,16 @@ function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
-          <Route path="/" element={
-            <ProtectedRoute>
-              <Layout><Dashboard /></Layout>
-            </ProtectedRoute>
-          } />
-          <Route path="/projects" element={
-            <ProtectedRoute>
-              <Layout><Projects /></Layout>
-            </ProtectedRoute>
-          } />
-          <Route path="/transactions" element={
-            <ProtectedRoute>
-              <Layout><Transactions /></Layout>
-            </ProtectedRoute>
-          } />
-          <Route path="/findings" element={
-            <ProtectedRoute>
-              <Layout><Findings /></Layout>
-            </ProtectedRoute>
-          } />
-          <Route path="/org-setup" element={
-            <ProtectedRoute>
-              <Layout><OrganizationSetup /></Layout>
-            </ProtectedRoute>
-          } />
-          <Route path="/checklist-templates" element={
-            <ProtectedRoute>
-              <Layout><ChecklistTemplates /></Layout>
-            </ProtectedRoute>
-          } />
-          <Route path="/tasks" element={
-            <ProtectedRoute>
-              <Layout><Tasks /></Layout>
-            </ProtectedRoute>
-          } />
+          <Route path="/" element={<ProtectedRoute><Layout><Dashboard /></Layout></ProtectedRoute>} />
+          <Route path="/projects" element={<ProtectedRoute><Layout><Projects /></Layout></ProtectedRoute>} />
+          <Route path="/transactions" element={<ProtectedRoute><Layout><Transactions /></Layout></ProtectedRoute>} />
+          <Route path="/findings" element={<ProtectedRoute><Layout><Findings /></Layout></ProtectedRoute>} />
+          <Route path="/tasks" element={<ProtectedRoute><Layout><Tasks /></Layout></ProtectedRoute>} />
+          <Route path="/vendors" element={<ProtectedRoute><Layout><Vendors /></Layout></ProtectedRoute>} />
+          <Route path="/checklist-templates" element={<ProtectedRoute><Layout><ChecklistTemplates /></Layout></ProtectedRoute>} />
+          <Route path="/ai-validation" element={<ProtectedRoute><Layout><AiValidation /></Layout></ProtectedRoute>} />
+          <Route path="/org-setup" element={<ProtectedRoute><Layout><OrganizationSetup /></Layout></ProtectedRoute>} />
+          <Route path="/evidence" element={<ProtectedRoute><Layout><Evidence /></Layout></ProtectedRoute>} />
         </Routes>
       </Router>
     </AuthProvider>

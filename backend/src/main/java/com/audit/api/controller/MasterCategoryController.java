@@ -27,7 +27,7 @@ public class MasterCategoryController {
         this.securityUtils = securityUtils;
     }
 
-    /** Returns all categories (L1 + L2) for the org, flat list. */
+    /** Returns all categories (L1 + L2 + L3) for the org, flat list. */
     @GetMapping
     public ResponseEntity<List<MasterCategory>> getAll() {
         return ResponseEntity.ok(
@@ -42,7 +42,7 @@ public class MasterCategoryController {
                         securityUtils.getCurrentOrganizationId(), 1));
     }
 
-    /** Returns L2 children of a given L1 parent. */
+    /** Returns children of a given parent. */
     @GetMapping("/{parentId}/children")
     public ResponseEntity<List<MasterCategory>> getChildren(@PathVariable UUID parentId) {
         return ResponseEntity.ok(
@@ -51,8 +51,7 @@ public class MasterCategoryController {
     }
 
     /**
-     * Replaces the entire category tree for the org.
-     * Accepts: { categories: [ { name, children: [string] } ] }
+     * Replaces the entire category tree for the org (3 levels).
      */
     @PostMapping("/tree")
     @Transactional
@@ -71,9 +70,17 @@ public class MasterCategoryController {
                 saved.add(l1);
 
                 if (l1Req.getChildren() != null) {
-                    for (String childName : l1Req.getChildren()) {
-                        MasterCategory l2 = new MasterCategory(childName, l1.getId(), orgId);
-                        saved.add(masterCategoryRepository.save(l2));
+                    for (CategoryTreeRequest.L2Category l2Req : l1Req.getChildren()) {
+                        MasterCategory l2 = new MasterCategory(l2Req.getName(), l1.getId(), 2, orgId);
+                        l2 = masterCategoryRepository.save(l2);
+                        saved.add(l2);
+
+                        if (l2Req.getChildren() != null) {
+                            for (String l3Name : l2Req.getChildren()) {
+                                MasterCategory l3 = new MasterCategory(l3Name, l2.getId(), 3, orgId);
+                                saved.add(masterCategoryRepository.save(l3));
+                            }
+                        }
                     }
                 }
             }
@@ -84,11 +91,22 @@ public class MasterCategoryController {
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
-        // Also delete children if L1
         MasterCategory cat = masterCategoryRepository.findById(id).orElse(null);
-        if (cat != null && cat.getLevel() == 1) {
-            masterCategoryRepository.deleteAll(
-                    masterCategoryRepository.findByOrganizationIdAndParentId(cat.getOrganizationId(), id));
+        if (cat != null) {
+            // If L1, delete L2s and L3s
+            if (cat.getLevel() == 1) {
+                List<MasterCategory> l2s = masterCategoryRepository.findByOrganizationIdAndParentId(cat.getOrganizationId(), id);
+                for (MasterCategory l2 : l2s) {
+                    masterCategoryRepository.deleteAll(
+                            masterCategoryRepository.findByOrganizationIdAndParentId(cat.getOrganizationId(), l2.getId()));
+                }
+                masterCategoryRepository.deleteAll(l2s);
+            } 
+            // If L2, delete L3s
+            else if (cat.getLevel() == 2) {
+                masterCategoryRepository.deleteAll(
+                        masterCategoryRepository.findByOrganizationIdAndParentId(cat.getOrganizationId(), id));
+            }
         }
         masterCategoryRepository.deleteById(id);
         return ResponseEntity.noContent().build();

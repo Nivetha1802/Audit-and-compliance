@@ -6,15 +6,17 @@ public class AuthResponse {
     private String token;
     private UUID organizationId;
     private String role;
+    private String fullName;
     private String organizationName;
     private boolean setupRequired;
 
     public AuthResponse() {}
 
-    public AuthResponse(String token, UUID organizationId, String role, String organizationName, boolean setupRequired) {
+    public AuthResponse(String token, UUID organizationId, String role, String fullName, String organizationName, boolean setupRequired) {
         this.token = token;
         this.organizationId = organizationId;
         this.role = role;
+        this.fullName = fullName;
         this.organizationName = organizationName;
         this.setupRequired = setupRequired;
     }
@@ -25,17 +27,19 @@ public class AuthResponse {
         private String token;
         private UUID organizationId;
         private String role;
+        private String fullName;
         private String organizationName;
         private boolean setupRequired;
 
         public Builder token(String token) { this.token = token; return this; }
         public Builder organizationId(UUID organizationId) { this.organizationId = organizationId; return this; }
         public Builder role(String role) { this.role = role; return this; }
+        public Builder fullName(String fullName) { this.fullName = fullName; return this; }
         public Builder organizationName(String organizationName) { this.organizationName = organizationName; return this; }
         public Builder setupRequired(boolean setupRequired) { this.setupRequired = setupRequired; return this; }
 
         public AuthResponse build() {
-            return new AuthResponse(token, organizationId, role, organizationName, setupRequired);
+            return new AuthResponse(token, organizationId, role, fullName, organizationName, setupRequired);
         }
     }
 
@@ -45,6 +49,8 @@ public class AuthResponse {
     public void setOrganizationId(UUID organizationId) { this.organizationId = organizationId; }
     public String getRole() { return role; }
     public void setRole(String role) { this.role = role; }
+    public String getFullName() { return fullName; }
+    public void setFullName(String fullName) { this.fullName = fullName; }
     public String getOrganizationName() { return organizationName; }
     public void setOrganizationName(String organizationName) { this.organizationName = organizationName; }
     public boolean isSetupRequired() { return setupRequired; }

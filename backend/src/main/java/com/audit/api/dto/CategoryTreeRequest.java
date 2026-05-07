@@ -11,7 +11,17 @@ public class CategoryTreeRequest {
 
     public static class L1Category {
         private String name;
-        private List<String> children;
+        private List<L2Category> children;
+
+        public String getName() { return name; }
+        public void setName(String name) { this.name = name; }
+        public List<L2Category> getChildren() { return children; }
+        public void setChildren(List<L2Category> children) { this.children = children; }
+    }
+
+    public static class L2Category {
+        private String name;
+        private List<String> children; // Level 3 names
 
         public String getName() { return name; }
         public void setName(String name) { this.name = name; }

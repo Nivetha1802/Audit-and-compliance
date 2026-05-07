@@ -54,6 +54,11 @@ public class DashboardService {
         stats.put("totalProjects", projects.size());
         stats.put("totalTransactions", transactions.size());
         stats.put("totalFindings", findings.size());
+        long compliantTx = transactions.stream().filter(t -> "COMPLIANT".equals(t.getComplianceStatus())).count();
+        int complianceScore = transactions.isEmpty() ? 0
+                : (int) Math.round((compliantTx * 100.0) / transactions.size());
+        stats.put("complianceScore", complianceScore);
+
         stats.put("totalUsers", orgUsers.size());
         stats.put("openTasks", tasks.stream().filter(t -> !List.of("COMPLETED","REJECTED").contains(t.getStatus())).count());
 

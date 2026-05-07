@@ -38,7 +38,35 @@ public class Project extends BaseEntity {
     private UUID auditorId;
 
     @Column(nullable = false)
-    private String status = "ACTIVE"; // ACTIVE, COMPLETED, SUSPENDED
+    private String status = "ACTIVE"; // ACTIVE, IN_AUDIT, UNDER_REVIEW, SIGNED_OFF, CLOSED, SUSPENDED
+
+    // ── Audit Lifecycle ──────────────────────────────────────────────────────
+    @Column(name = "audit_status")
+    private String auditStatus = "DRAFT"; // DRAFT, IN_PROGRESS, UNDER_REVIEW, SIGNED_OFF, CLOSED
+
+    @Column(name = "audit_period_start")
+    private LocalDate auditPeriodStart;
+
+    @Column(name = "audit_period_end")
+    private LocalDate auditPeriodEnd;
+
+    @Column(name = "audit_deadline")
+    private LocalDate auditDeadline;
+
+    @Column(name = "signed_off_by")
+    private UUID signedOffBy;
+
+    @Column(name = "signed_off_at")
+    private Double complianceScore = 0.0;
+    private String riskStatus; // COMPLIANT, AT_RISK, NEEDS_REVIEW
+
+    private java.time.LocalDateTime signedOffAt;
+
+    @Column(name = "sign_off_notes", columnDefinition = "TEXT")
+    private String signOffNotes;
+
+    @Column(name = "is_locked")
+    private boolean locked = false;
 
     public Project() {}
 
@@ -64,4 +92,25 @@ public class Project extends BaseEntity {
     public void setAuditorId(UUID auditorId) { this.auditorId = auditorId; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+    public String getAuditStatus() { return auditStatus; }
+    public void setAuditStatus(String auditStatus) { this.auditStatus = auditStatus; }
+    public LocalDate getAuditPeriodStart() { return auditPeriodStart; }
+    public Double getComplianceScore() { return complianceScore; }
+    public void setComplianceScore(Double complianceScore) { this.complianceScore = complianceScore; }
+    public String getRiskStatus() { return riskStatus; }
+    public void setRiskStatus(String riskStatus) { this.riskStatus = riskStatus; }
+
+    public void setAuditPeriodStart(LocalDate auditPeriodStart) { this.auditPeriodStart = auditPeriodStart; }
+    public LocalDate getAuditPeriodEnd() { return auditPeriodEnd; }
+    public void setAuditPeriodEnd(LocalDate auditPeriodEnd) { this.auditPeriodEnd = auditPeriodEnd; }
+    public LocalDate getAuditDeadline() { return auditDeadline; }
+    public void setAuditDeadline(LocalDate auditDeadline) { this.auditDeadline = auditDeadline; }
+    public UUID getSignedOffBy() { return signedOffBy; }
+    public void setSignedOffBy(UUID signedOffBy) { this.signedOffBy = signedOffBy; }
+    public java.time.LocalDateTime getSignedOffAt() { return signedOffAt; }
+    public void setSignedOffAt(java.time.LocalDateTime signedOffAt) { this.signedOffAt = signedOffAt; }
+    public String getSignOffNotes() { return signOffNotes; }
+    public void setSignOffNotes(String signOffNotes) { this.signOffNotes = signOffNotes; }
+    public boolean isLocked() { return locked; }
+    public void setLocked(boolean locked) { this.locked = locked; }
 }

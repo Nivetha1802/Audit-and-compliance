@@ -3,22 +3,32 @@ import api, { masterCategoriesApi } from '../services/api';
 
 const emptyForm = {
   name: '',
-  category: '',
+  categories: [],
   items: [{ description: '', mandatory: true }],
 };
 
-/** Build grouped tree from flat list */
-function buildTree(flatCats) {
-  const l1 = flatCats.filter(c => c.level === 1);
-  return l1.map(parent => ({
-    ...parent,
-    children: flatCats.filter(c => c.parentId === parent.id),
-  }));
+/** Build grouped options from flat list: optgroup = "L1 › L2", options = L3 names */
+function buildCategoryOptions(flatCats) {
+  if (!flatCats || flatCats.length === 0) return [];
+  const byId = {};
+  flatCats.forEach(c => { byId[c.id] = c; });
+
+  const l3 = flatCats.filter(c => c.level === 3);
+  const groupMap = {};
+  l3.forEach(item => {
+    const l2 = byId[item.parentId];
+    if (!l2) return;
+    const l1 = byId[l2.parentId];
+    const groupLabel = l1 ? `${l1.name} › ${l2.name}` : l2.name;
+    if (!groupMap[groupLabel]) groupMap[groupLabel] = [];
+    groupMap[groupLabel].push({ id: item.id, name: item.name });
+  });
+  return Object.entries(groupMap).map(([label, items]) => ({ label, items }));
 }
 
 export default function ChecklistTemplates() {
   const [templates, setTemplates] = useState([]);
-  const [catTree, setCatTree] = useState([]);
+  const [categoryGroups, setCategoryGroups] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(emptyForm);
@@ -35,7 +45,7 @@ export default function ChecklistTemplates() {
         masterCategoriesApi.getAll(),
       ]);
       setTemplates(templatesRes.data);
-      setCatTree(buildTree(catsRes.data));
+      setCategoryGroups(buildCategoryOptions(catsRes.data));
     } catch (err) {
       console.error('Error fetching data', err);
     } finally {
@@ -55,7 +65,7 @@ export default function ChecklistTemplates() {
       setEditingId(t.id);
       setForm({
         name: t.name,
-        category: t.description || '',
+        categories: t.description ? t.description.split(',').map(s => s.trim()).filter(Boolean) : [],
         items: itemsRes.data.length > 0 ? itemsRes.data : [{ description: '', mandatory: true }],
       });
       setShowForm(true);
@@ -70,10 +80,11 @@ export default function ChecklistTemplates() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    if (!form.name || !form.category) { setError('Please fill in the name and select a category'); return; }
+    if (!form.name || form.categories.length === 0) { setError('Please fill in the name and select at least one category'); return; }
     try {
-      if (editingId) { await api.put(`/checklist-templates/${editingId}`, form); }
-      else { await api.post('/checklist-templates', form); }
+      const payload = { name: form.name, categories: form.categories, items: form.items };
+      if (editingId) { await api.put(`/checklist-templates/${editingId}`, payload); }
+      else { await api.post('/checklist-templates', payload); }
       handleCancel();
       fetchData();
     } catch (err) {
@@ -114,25 +125,51 @@ export default function ChecklistTemplates() {
                 <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={inputStyle} required />
               </div>
               <div>
-                <label style={labelStyle}>Link to Category *</label>
-                {catTree.length === 0 ? (
+                <label style={labelStyle}>Link to Categories * <span style={{ fontWeight: 400, color: '#9ca3af', fontSize: '0.8rem' }}>(select one or more)</span></label>
+                {categoryGroups.length === 0 ? (
                   <div style={{ padding: '0.5rem', backgroundColor: '#fef3c7', color: '#92400e', borderRadius: '0.25rem', fontSize: '0.875rem' }}>
                     No categories found. Complete Organization Setup first.
                   </div>
                 ) : (
-                  <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} style={inputStyle} required>
-                    <option value="">— Select Category —</option>
-                    {catTree.map(l1 => (
-                      <optgroup key={l1.id} label={`▸ ${l1.name}`}>
-                        {/* L1 itself as selectable option */}
-                        <option value={l1.name}>{l1.name} (all)</option>
-                        {/* L2 children */}
-                        {l1.children.map(l2 => (
-                          <option key={l2.id} value={l2.name}>&nbsp;&nbsp;{l2.name}</option>
+                  <div>
+                    {/* Selected tags */}
+                    {form.categories.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.5rem' }}>
+                        {form.categories.map(cat => (
+                          <span key={cat} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', padding: '0.2rem 0.6rem', backgroundColor: '#e0e7ff', color: '#3730a3', borderRadius: '9999px', fontSize: '0.78rem', fontWeight: 500 }}>
+                            {cat}
+                            <button type="button"
+                              onClick={() => setForm({ ...form, categories: form.categories.filter(c => c !== cat) })}
+                              style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#6366f1', fontWeight: 700, padding: 0, lineHeight: 1, fontSize: '0.9rem' }}>
+                              ×
+                            </button>
+                          </span>
                         ))}
-                      </optgroup>
-                    ))}
-                  </select>
+                      </div>
+                    )}
+                    {/* Dropdown to add more */}
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val && !form.categories.includes(val)) {
+                          setForm({ ...form, categories: [...form.categories, val] });
+                        }
+                      }}
+                      style={inputStyle}
+                    >
+                      <option value="">— Add a category —</option>
+                      {categoryGroups.map((group, gi) => (
+                        <optgroup key={gi} label={group.label}>
+                          {group.items
+                            .filter(item => !form.categories.includes(item.name))
+                            .map(item => (
+                              <option key={item.id} value={item.name}>{item.name}</option>
+                            ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                  </div>
                 )}
               </div>
             </div>
@@ -189,9 +226,13 @@ export default function ChecklistTemplates() {
               <div>
                 <h3 style={{ margin: 0, fontSize: '1rem' }}>{t.name}</h3>
                 {t.description && (
-                  <span style={{ display: 'inline-block', marginTop: '0.3rem', fontSize: '0.75rem', backgroundColor: '#fef3c7', color: '#92400e', padding: '0.15rem 0.5rem', borderRadius: '0.25rem' }}>
-                    {t.description}
-                  </span>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginTop: '0.3rem' }}>
+                    {t.description.split(',').map(cat => cat.trim()).filter(Boolean).map(cat => (
+                      <span key={cat} style={{ display: 'inline-block', fontSize: '0.72rem', backgroundColor: '#e0e7ff', color: '#3730a3', padding: '0.15rem 0.5rem', borderRadius: '9999px' }}>
+                        {cat}
+                      </span>
+                    ))}
+                  </div>
                 )}
               </div>
               <div style={{ display: 'flex', gap: '0.5rem' }}>

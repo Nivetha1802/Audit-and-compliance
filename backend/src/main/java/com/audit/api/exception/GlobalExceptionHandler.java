@@ -12,9 +12,11 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<Map<String, String>> handleRuntimeException(RuntimeException ex) {
+        // Log the full stack trace so we can see the real cause
+        ex.printStackTrace();
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
-                .body(Map.of("message", ex.getMessage()));
+                .body(Map.of("message", ex.getMessage() != null ? ex.getMessage() : "Unknown error"));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

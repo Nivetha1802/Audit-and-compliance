@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { transactionApi, projectApi, evidenceApi, taskApi, userApi } from '../services/api';
+import { transactionApi, projectApi, evidenceApi, taskApi, userApi, findingApi, vendorsApi, aiApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
 const STATUS_COLORS = {
@@ -23,16 +23,26 @@ const CAN_ASSIGN  = ['ADMIN'];
 const CAN_CHANGE_STATUS = ['ADMIN', 'AUDITOR', 'COMPLIANCE_OFFICER'];
 
 // ── Evidence Panel ──────────────────────────────────────────────────────────
-function EvidencePanel({ transaction, users, currentUser, onClose, onStatusChange }) {
+function EvidencePanel({ transaction, users, currentUser, onClose, onStatusChange, onVendorLinked }) {
   const [items, setItems] = useState([]);
   const [readiness, setReadiness] = useState(null);
   const [uploading, setUploading] = useState(null);
+  const [validating, setValidating] = useState(null);   // itemId being validated
+  const [validationResults, setValidationResults] = useState({}); // itemId -> result
   const [tasks, setTasks] = useState([]);
+  const [vendors, setVendors] = useState([]);
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [taskForm, setTaskForm] = useState({
     title: '', description: '', priority: 'MEDIUM',
     assignedTo: '', dueDate: '', taskType: 'RESUBMIT_EVIDENCE'
   });
+
+  // Finding state
+  const [findings, setFindings] = useState([]);
+  const [showFindingForm, setShowFindingForm] = useState(false);
+  const [findingForm, setFindingForm] = useState({ title: '', description: '', severity: 'MEDIUM' });
+
+  const isAuditor = ['ADMIN', 'AUDITOR', 'COMPLIANCE_OFFICER'].includes(currentUser?.role);
 
   const isAdmin = CAN_ASSIGN.includes(currentUser?.role);
   const canChangeStatus = CAN_CHANGE_STATUS.includes(currentUser?.role);
@@ -45,14 +55,18 @@ function EvidencePanel({ transaction, users, currentUser, onClose, onStatusChang
 
   const loadData = async () => {
     try {
-      const [itemsRes, readinessRes, tasksRes] = await Promise.all([
+      const [itemsRes, readinessRes, tasksRes, findingsRes, vendorsRes] = await Promise.all([
         evidenceApi.getItems(transaction.id),
         evidenceApi.getReadiness(transaction.id),
         taskApi.getByTransaction(transaction.id),
+        findingApi.getAll(),
+        vendorsApi.getAll(),
       ]);
       setItems(itemsRes.data);
       setReadiness(readinessRes.data);
       setTasks(tasksRes.data);
+      setFindings(findingsRes.data.filter(f => f.transactionId === transaction.id));
+      setVendors(vendorsRes.data);
     } catch (err) { console.error(err); }
   };
 
@@ -72,6 +86,22 @@ function EvidencePanel({ transaction, users, currentUser, onClose, onStatusChang
     catch (err) { alert('Failed to remove evidence'); }
   };
 
+  const handleValidate = async (item) => {
+    if (!item.documentId) return;
+    setValidating(item.id);
+    try {
+      const res = await aiApi.validateEvidenceFile(transaction.id, item.documentId);
+      setValidationResults(prev => ({ ...prev, [item.id]: res.data }));
+    } catch (err) {
+      setValidationResults(prev => ({
+        ...prev,
+        [item.id]: { status: 'ERROR', issues: ['Validation failed: ' + (err.message || 'Unknown error')] }
+      }));
+    } finally {
+      setValidating(null);
+    }
+  };
+
   const handleCreateTask = async (e) => {
     e.preventDefault();
     try {
@@ -86,6 +116,30 @@ function EvidencePanel({ transaction, users, currentUser, onClose, onStatusChang
       loadData();
     } catch (err) { alert('Failed to create task'); }
   };
+
+  const handleRaiseFinding = async (e) => {
+    e.preventDefault();
+    try {
+      await findingApi.create({
+        ...findingForm,
+        transactionId: transaction.id,
+        status: 'OPEN',
+      });
+      setShowFindingForm(false);
+      setFindingForm({ title: '', description: '', severity: 'MEDIUM' });
+      loadData();
+      // Also update transaction status to RAISED_FINDING
+      onStatusChange(transaction.id, 'RAISED_FINDING');
+    } catch (err) { alert('Failed to raise finding'); }
+  };
+
+  const handleLinkVendor = async (vendorId) => {
+    try {
+      const res = await transactionApi.linkVendor(transaction.id, vendorId);
+      onVendorLinked(res.data);
+    } catch (err) { alert('Failed to link vendor'); }
+  };
+
 
   const pct = readiness?.percentage ?? 0;
   const color = pct >= 80 ? '#16a34a' : pct >= 50 ? '#d97706' : '#dc2626';
@@ -103,6 +157,66 @@ function EvidencePanel({ transaction, users, currentUser, onClose, onStatusChang
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '1rem 1.25rem' }}>
+
+
+        {/* Vendor Linking Section */}
+        <div style={{ marginBottom: '1.25rem', padding: '0.75rem', border: '1px solid #e5e7eb', borderRadius: '0.375rem', backgroundColor: '#f3f4f6' }}>
+          <div style={{ fontWeight: '600', fontSize: '0.875rem', marginBottom: '0.5rem' }}>🔗 Linked Vendor</div>
+          {transaction.vendorId ? (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontSize: '0.85rem', fontWeight: '600', color: '#111827' }}>
+                  {vendors.find(v => v.id === transaction.vendorId)?.name || 'Linked'}
+                </div>
+                <div style={{ fontSize: '0.72rem', color: '#6b7280' }}>
+                  {vendors.find(v => v.id === transaction.vendorId)?.customVendorId}
+                </div>
+              </div>
+              <select
+                value={transaction.vendorId}
+                onChange={(e) => handleLinkVendor(e.target.value)}
+                style={{ ...inp, width: 'auto', fontSize: '0.72rem', color: '#6b7280', border: 'none', background: 'transparent', cursor: 'pointer' }}
+              >
+                {vendors.map(v => (
+                  <option key={v.id} value={v.id}>{v.name} ({v.customVendorId})</option>
+                ))}
+                <option value="">— Unlink vendor</option>
+              </select>
+            </div>
+          ) : (
+            <>
+              <select
+                value=""
+                onChange={(e) => e.target.value && handleLinkVendor(e.target.value)}
+                style={inp}
+              >
+                <option value="">Select a vendor to link...</option>
+                {vendors.map(v => (
+                  <option key={v.id} value={v.id}>{v.name} ({v.customVendorId})</option>
+                ))}
+              </select>
+              {transaction.vendorCustomer && (
+                <div style={{ fontSize: '0.72rem', color: '#6b7280', marginTop: '0.3rem' }}>
+                  Imported value: "{transaction.vendorCustomer}"
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Audit Intelligence */}
+        {(transaction.bankValidationRequired || transaction.isHighRisk) && (
+          <div style={{ marginBottom: '1.25rem', padding: '0.75rem', borderRadius: '0.375rem', borderLeft: `4px solid ${transaction.isHighRisk ? '#e53e3e' : '#3182ce'}`, backgroundColor: transaction.isHighRisk ? '#fff5f5' : '#f0f7ff' }}>
+            <div style={{ fontWeight: '600', fontSize: '0.875rem', marginBottom: '0.3rem', color: transaction.isHighRisk ? '#c53030' : '#2b6cb0' }}>
+              {transaction.isHighRisk ? '🚩 High Risk Alert' : 'ℹ️ Audit Intelligence'}
+            </div>
+            <div style={{ fontSize: '0.8rem', color: '#374151' }}>
+              {transaction.bankValidationRequired
+                ? <><strong>Bank Validation Required:</strong> {transaction.validationReason}</>
+                : 'Standard risk level. No immediate bank validation triggered.'}
+            </div>
+          </div>
+        )}
 
         {/* Access notice for non-admins */}
         {!canUpload && (
@@ -151,10 +265,17 @@ function EvidencePanel({ transaction, users, currentUser, onClose, onStatusChang
                   : <span style={{ fontSize: '0.75rem', color: '#d97706' }}>Pending</span>}
               </div>
               {item.provided && isAdmin ? (
-                <button onClick={() => handleRemove(item.id)}
-                  style={{ fontSize: '0.72rem', color: '#dc2626', border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}>
-                  Remove evidence
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  <button onClick={() => handleRemove(item.id)}
+                    style={{ fontSize: '0.72rem', color: '#dc2626', border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}>
+                    Remove evidence
+                  </button>
+                  <button onClick={() => handleValidate(item)}
+                    disabled={validating === item.id}
+                    style={{ fontSize: '0.72rem', padding: '0.2rem 0.6rem', backgroundColor: validating === item.id ? '#e5e7eb' : '#7c3aed', color: validating === item.id ? '#6b7280' : 'white', border: 'none', borderRadius: '0.25rem', cursor: validating === item.id ? 'not-allowed' : 'pointer' }}>
+                    {validating === item.id ? '🔍 Validating...' : '🤖 Validate Amount'}
+                  </button>
+                </div>
               ) : !item.provided && canUpload ? (
                 <label style={{ display: 'inline-block', cursor: 'pointer' }}>
                   <input type="file" style={{ display: 'none' }} disabled={uploading === item.id}
@@ -164,6 +285,36 @@ function EvidencePanel({ transaction, users, currentUser, onClose, onStatusChang
                   </span>
                 </label>
               ) : null}
+              {/* AI Validation Result */}
+              {validationResults[item.id] && (() => {
+                const vr = validationResults[item.id];
+                const parsed = (() => { try { return JSON.parse(vr.resultJson || '{}'); } catch { return {}; } })();
+                const isMatch = parsed.amount_match ?? vr.amount_match;
+                const extractedAmt = parsed.extracted_amount ?? vr.extracted_amount;
+                const method = parsed.extraction_method ?? vr.extraction_method;
+                const status = vr.status;
+                const bgColor = status === 'VALIDATED' ? '#f0fdf4' : status === 'MISMATCH' ? '#fff7ed' : '#fef2f2';
+                const borderColor = status === 'VALIDATED' ? '#86efac' : status === 'MISMATCH' ? '#fdba74' : '#fca5a5';
+                const icon = status === 'VALIDATED' ? '✅' : status === 'MISMATCH' ? '⚠️' : '❌';
+                return (
+                  <div style={{ marginTop: '0.5rem', padding: '0.5rem 0.75rem', backgroundColor: bgColor, border: `1px solid ${borderColor}`, borderRadius: '0.25rem', fontSize: '0.75rem' }}>
+                    <div style={{ fontWeight: '600', marginBottom: '0.2rem' }}>
+                      {icon} AI Validation: {status}
+                    </div>
+                    {extractedAmt != null && (
+                      <div style={{ color: '#374151' }}>
+                        Extracted: <strong>₹{Number(extractedAmt).toLocaleString()}</strong>
+                        {' '}vs transaction: <strong>₹{transaction.amount?.toLocaleString()}</strong>
+                        {' '}— {isMatch
+                          ? <span style={{ color: '#16a34a', fontWeight: 600 }}>Match ✓</span>
+                          : <span style={{ color: '#dc2626', fontWeight: 600 }}>Mismatch ✗</span>}
+                      </div>
+                    )}
+                    {method && <div style={{ color: '#6b7280', marginTop: '0.15rem' }}>Method: {method}</div>}
+                    {vr.issues && <div style={{ color: '#92400e', marginTop: '0.15rem' }}>{vr.issues}</div>}
+                  </div>
+                );
+              })()}
             </div>
           ))}
         </div>
@@ -225,6 +376,56 @@ function EvidencePanel({ transaction, users, currentUser, onClose, onStatusChang
             );
           })}
         </div>
+
+        {/* ── Findings (Auditor/Admin only) ── */}
+        {isAuditor && (
+          <div style={{ marginTop: '1.25rem', borderTop: '1px solid #e5e7eb', paddingTop: '1rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+              <div style={{ fontWeight: '600', fontSize: '0.875rem', color: '#dc2626' }}>
+                ⚠ Findings ({findings.length})
+              </div>
+              <button onClick={() => setShowFindingForm(!showFindingForm)}
+                style={{ fontSize: '0.75rem', padding: '0.2rem 0.6rem', backgroundColor: showFindingForm ? '#6b7280' : '#dc2626', color: 'white', border: 'none', borderRadius: '0.25rem', cursor: 'pointer' }}>
+                {showFindingForm ? 'Cancel' : '+ Raise Finding'}
+              </button>
+            </div>
+
+            {showFindingForm && (
+              <form onSubmit={handleRaiseFinding} style={{ padding: '0.75rem', backgroundColor: '#fff5f5', border: '1px solid #fecaca', borderRadius: '0.375rem', marginBottom: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <input value={findingForm.title} onChange={(e) => setFindingForm({ ...findingForm, title: e.target.value })}
+                  placeholder="Finding title *" style={inp} required />
+                <select value={findingForm.severity} onChange={(e) => setFindingForm({ ...findingForm, severity: e.target.value })} style={inp}>
+                  {['LOW','MEDIUM','HIGH','CRITICAL'].map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+                <textarea value={findingForm.description} onChange={(e) => setFindingForm({ ...findingForm, description: e.target.value })}
+                  placeholder="Describe the issue — what was found, what was expected, potential impact *"
+                  rows={3} style={{ ...inp, resize: 'vertical' }} required />
+                <button type="submit" style={{ padding: '0.4rem', backgroundColor: '#dc2626', color: 'white', border: 'none', borderRadius: '0.25rem', cursor: 'pointer', fontSize: '0.8rem', fontWeight: '500' }}>
+                  Raise Finding
+                </button>
+              </form>
+            )}
+
+            {findings.length === 0 ? (
+              <div style={{ fontSize: '0.8rem', color: '#9ca3af', fontStyle: 'italic' }}>No findings raised for this transaction.</div>
+            ) : findings.map(f => {
+              const sevColors = { CRITICAL: '#7f1d1d', HIGH: '#991b1b', MEDIUM: '#92400e', LOW: '#065f46' };
+              const sevBg    = { CRITICAL: '#fee2e2', HIGH: '#fecaca', MEDIUM: '#fef3c7', LOW: '#d1fae5' };
+              return (
+                <div key={f.id} style={{ padding: '0.6rem 0.75rem', border: '1px solid #fecaca', borderRadius: '0.375rem', marginBottom: '0.4rem', borderLeft: '3px solid #dc2626', backgroundColor: '#fff5f5' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div style={{ fontSize: '0.8rem', fontWeight: '600', color: '#111827' }}>{f.title}</div>
+                    <span style={{ fontSize: '0.68rem', padding: '0.1rem 0.4rem', borderRadius: '9999px', backgroundColor: sevBg[f.severity] || '#f3f4f6', color: sevColors[f.severity] || '#374151', fontWeight: '700', flexShrink: 0, marginLeft: '0.5rem' }}>
+                      {f.severity}
+                    </span>
+                  </div>
+                  {f.description && <div style={{ fontSize: '0.72rem', color: '#6b7280', marginTop: '0.2rem' }}>{f.description}</div>}
+                  <div style={{ fontSize: '0.68rem', color: '#9ca3af', marginTop: '0.2rem' }}>{f.status}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -465,6 +666,10 @@ export default function Transactions() {
           onStatusChange={async (id, status) => {
             await handleStatusChange(id, status);
             setSelectedTx(prev => ({ ...prev, status }));
+          }}
+          onVendorLinked={(updatedTx) => {
+            setAllTransactions(prev => prev.map(t => t.id === updatedTx.id ? updatedTx : t));
+            setSelectedTx(updatedTx);
           }}
         />
       )}

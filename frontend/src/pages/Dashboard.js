@@ -238,7 +238,7 @@ export default function Dashboard() {
         <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.25rem' }}>
           <ScoreCard title="Overall Audit Readiness Score" pct={stats.auditReadinessPct || 0} trend={12} />
           <ScoreCard title="Financial Audit Readiness" pct={Math.round((approved / Math.max(totalTx, 1)) * 100)} trend={10} />
-          <ScoreCard title="Statutory Compliance Score" pct={Math.min(100, (stats.auditReadinessPct || 0) + 19)} trend={4} color={C.green} />
+          <ScoreCard title="Statutory Compliance Score" pct={stats.complianceScore || 0} trend={4} color={C.green} />
           <ScoreCard title="Evidence Readiness Score" pct={Math.round((stats.checklistsCompleted / Math.max(stats.checklistsTotal, 1)) * 100) || 0} trend={11} />
           {/* High Risk Gaps */}
           <div style={{ backgroundColor: 'white', borderRadius: '0.5rem', padding: '1rem 1.25rem', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', flex: 1, minWidth: 0 }}>
