@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { organizationApi, userApi, masterCategoriesApi } from '../services/api';
+import { organizationApi, userApi, masterCategoriesApi, maintenanceApi } from '../services/api';
 
 const DEFAULT_TREE = [
   {
@@ -155,6 +155,20 @@ export default function OrganizationSetup() {
   const startEdit = (type, l1Idx, l2Idx = null, l3Idx = null, value = '') =>
     setEditState({ type, l1Idx, l2Idx, l3Idx, value });
 
+    const handleSeedData = async () => {
+        if (!window.confirm("This will seed default Categories, Vendors, and Checklists. Continue?")) return;
+        setLoading(true);
+        try {
+            await maintenanceApi.seedMasterData();
+            alert("Master data seeded successfully! Please refresh the page.");
+            window.location.reload();
+        } catch (err) {
+            console.error("Seeding failed:", err);
+            alert("Failed to seed data.");
+        } finally {
+            setLoading(false);
+        }
+    };
   const cancelEdit = () => setEditState({ type: null, l1Idx: null, l2Idx: null, l3Idx: null, value: '' });
 
   const saveEdit = () => {
@@ -215,6 +229,14 @@ export default function OrganizationSetup() {
     }
   };
 
+                    <button 
+                        type="button"
+                        onClick={handleSeedData}
+                        className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition disabled:opacity-50"
+                        disabled={loading}
+                    >
+                        {loading ? 'Seeding...' : 'Seed Default Master Data'}
+                    </button>
   // ── Styles ─────────────────────────────────────────────────────────────────
   const inputStyle = {
     width: '100%', padding: '0.6rem 0.8rem', border: '1px solid #d1d5db',

@@ -24,16 +24,19 @@ public class TransactionService {
     private final SecurityUtils securityUtils;
     private final CategoryMappingService categoryMappingService;
     private final BankValidationService bankValidationService;
+    private final AuditLifecycleService auditLifecycleService;
 
     @Autowired
     public TransactionService(TransactionRepository transactionRepository,
                                SecurityUtils securityUtils,
                                CategoryMappingService categoryMappingService,
-                               BankValidationService bankValidationService) {
+                               BankValidationService bankValidationService,
+                               AuditLifecycleService auditLifecycleService) {
         this.transactionRepository = transactionRepository;
         this.securityUtils = securityUtils;
         this.categoryMappingService = categoryMappingService;
         this.bankValidationService = bankValidationService;
+        this.auditLifecycleService = auditLifecycleService;
     }
 
     public List<Transaction> getAllTransactions() {
@@ -153,7 +156,12 @@ public class TransactionService {
             throw new RuntimeException("Unauthorized access");
         tx.setStatus(status);
         bankValidationService.evaluateBankValidationRequirement(tx);
-        return transactionRepository.save(tx);
+        transactionRepository.save(tx);
+        // Run compliance validation when a transaction is approved
+        if ("APPROVED".equals(status)) {
+            auditLifecycleService.validateTransaction(id);
+        }
+        return transactionRepository.findById(id).orElse(tx);
     }
 
     public Transaction linkVendor(UUID id, UUID vendorId) {

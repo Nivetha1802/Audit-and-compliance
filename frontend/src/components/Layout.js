@@ -1,40 +1,37 @@
 import React, { useState } from 'react';
 import { useNavigate, NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import {
-  FiGrid, FiDatabase, FiFileText, FiUsers, FiLayers, FiAlertCircle,
-  FiSettings, FiChevronLeft, FiChevronRight, FiLogOut, FiMenu, FiBell, FiSearch,
-  FiBox, FiActivity, FiBriefcase, FiClipboard, FiShield, FiUploadCloud
-} from 'react-icons/fi';
 
-const SIDEBAR_BG = '#0f172a';
-const SIDEBAR_HOVER = '#1e293b';
+const SIDEBAR_BG    = '#0f172a';
+const SIDEBAR_HOVER  = '#1e293b';
 const SIDEBAR_ACTIVE = '#1d4ed8';
+const SIDEBAR_TEXT   = '#94a3b8';
+const SIDEBAR_TEXT_ACTIVE = '#ffffff';
+const SIDEBAR_BORDER = '#1e293b';
 
-const MENU_GROUPS = [
+const NAV_GROUPS = [
   {
     label: null,
     items: [
-      { to: '/', icon: <FiGrid />, label: 'Dashboard' },
+      { to: '/', icon: '⊞', label: 'Dashboard' },
     ],
   },
   {
     label: 'AUDIT MANAGEMENT',
     items: [
-      { to: '/projects', icon: <FiLayers />, label: 'Projects' },
-      { to: '/transactions', icon: <FiDatabase />, label: 'Transactions' },
-      { to: '/evidence', icon: <FiUploadCloud />, label: 'Evidence Mgmt' },
-      { to: '/findings', icon: <FiAlertCircle />, label: 'Findings' },
-      { to: '/tasks', icon: <FiFileText />, label: 'Tasks' },
+      { to: '/projects',     icon: '📁', label: 'Projects' },
+      { to: '/transactions', icon: '📊', label: 'Transactions' },
+      { to: '/findings',     icon: '⚠️', label: 'Findings' },
+      { to: '/tasks',        icon: '✅', label: 'Tasks' },
     ],
   },
   {
     label: 'CONFIGURATION',
     items: [
-      { to: '/checklist-templates', icon: <FiClipboard />, label: 'Checklists' },
-      { to: '/ai-validation', icon: <FiShield />, label: 'AI Analysis' },
-      { to: '/org-setup', icon: <FiSettings />, label: 'Org Settings', adminOnly: true },
-      { to: '/vendors', icon: <FiBox />, label: 'Vendors' },
+      { to: '/checklist-templates', icon: '📋', label: 'Checklists' },
+      { to: '/ai-validation',       icon: '🤖', label: 'AI Analysis' },
+      { to: '/org-setup',           icon: '⚙️', label: 'Org Settings', adminOnly: true },
+      { to: '/vendors',             icon: '🏢', label: 'Vendors' },
     ],
   },
 ];
@@ -55,7 +52,7 @@ export default function Layout({ children }) {
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#f1f5f9' }}>
-      
+
       {/* ── Sidebar ── */}
       <div style={{
         width: collapsed ? '64px' : '240px',
@@ -71,106 +68,127 @@ export default function Layout({ children }) {
       }}>
 
         {/* Logo */}
-        <div style={{ padding: '24px', borderBottom: '1px solid #1e293b', display: 'flex', alignItems: 'center' }}>
-          <div style={{ width: '32px', height: '32px', backgroundColor: '#3b82f6', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <FiShield style={{ color: 'white' }} />
+        <div style={{ padding: collapsed ? '1rem 0' : '1.25rem 1rem', borderBottom: `1px solid ${SIDEBAR_BORDER}`, display: 'flex', alignItems: 'center', gap: '0.75rem', justifyContent: collapsed ? 'center' : 'flex-start' }}>
+          <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: 'linear-gradient(135deg, #f59e0b, #ef4444)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem', flexShrink: 0 }}>
+            ☀️
           </div>
-          {!collapsed && <span style={{ marginLeft: '12px', fontWeight: 'bold', color: 'white', fontSize: '1.1rem' }}>AuditPro</span>}
+          {!collapsed && (
+            <div>
+              <div style={{ color: '#ffffff', fontWeight: '700', fontSize: '0.9rem', lineHeight: 1.2 }}>Sun Realty</div>
+              <div style={{ color: '#64748b', fontSize: '0.62rem', lineHeight: 1.2 }}>Building Trust, Delivering Value.</div>
+            </div>
+          )}
         </div>
 
-        {/* Menu Groups */}
-        <div className="no-scrollbar" style={{ flex: 1, overflowY: 'auto', padding: '16px 0' }}>
-          {MENU_GROUPS.map((group, gIdx) => (
-            <div key={gIdx} style={{ marginBottom: '24px' }}>
-              {!collapsed && group.label && (
-                <div style={{ padding: '0 24px 8px', fontSize: '10px', fontWeight: 'bold', color: '#64748b', letterSpacing: '0.05em' }}>
+        {/* Nav */}
+        <nav style={{ flex: 1, overflowY: 'auto', padding: '0.5rem 0', scrollbarWidth: 'none' }}>
+          {NAV_GROUPS.map((group, gi) => (
+            <div key={gi} style={{ marginBottom: '0.25rem' }}>
+              {group.label && !collapsed && (
+                <div style={{ padding: '0.75rem 1rem 0.25rem', fontSize: '0.6rem', fontWeight: '700', color: '#475569', letterSpacing: '0.08em' }}>
                   {group.label}
                 </div>
               )}
-              {group.items.map((item, iIdx) => {
+              {group.items.map(item => {
                 if (item.adminOnly && user?.role !== 'ADMIN') return null;
                 const active = isActive(item.to);
                 return (
-                  <NavLink
-                    key={iIdx}
-                    to={item.to}
+                  <NavLink key={item.to} to={item.to}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
-                      padding: '12px 24px',
-                      color: active ? 'white' : '#94a3b8',
-                      backgroundColor: active ? SIDEBAR_ACTIVE : 'transparent',
+                      gap: '0.75rem',
+                      padding: collapsed ? '0.625rem 0' : '0.625rem 1rem',
+                      justifyContent: collapsed ? 'center' : 'flex-start',
                       textDecoration: 'none',
-                      fontSize: '14px',
-                      fontWeight: active ? '600' : '500',
-                      transition: 'all 0.2s',
+                      margin: '0.1rem 0.5rem',
+                      borderRadius: '0.375rem',
+                      backgroundColor: active ? SIDEBAR_ACTIVE : 'transparent',
+                      color: active ? SIDEBAR_TEXT_ACTIVE : SIDEBAR_TEXT,
+                      transition: 'background-color 0.15s',
                     }}
-                    onMouseEnter={(e) => { if(!active) e.currentTarget.style.backgroundColor = SIDEBAR_HOVER; e.currentTarget.style.color = 'white'; }}
-                    onMouseLeave={(e) => { if(!active) e.currentTarget.style.backgroundColor = 'transparent'; if(!active) e.currentTarget.style.color = '#94a3b8'; }}
+                    onMouseEnter={e => { if (!active) e.currentTarget.style.backgroundColor = SIDEBAR_HOVER; }}
+                    onMouseLeave={e => { if (!active) e.currentTarget.style.backgroundColor = 'transparent'; }}
                   >
-                    <span style={{ fontSize: '18px', display: 'flex', alignItems: 'center' }}>{item.icon}</span>
-                    {!collapsed && <span style={{ marginLeft: '16px' }}>{item.label}</span>}
+                    <span style={{ fontSize: '1rem', flexShrink: 0, width: '20px', textAlign: 'center' }}>{item.icon}</span>
+                    {!collapsed && <span style={{ fontSize: '0.8rem', fontWeight: active ? '600' : '400', whiteSpace: 'nowrap' }}>{item.label}</span>}
+                    {!collapsed && active && <span style={{ marginLeft: 'auto', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#60a5fa', flexShrink: 0 }} />}
                   </NavLink>
                 );
               })}
             </div>
           ))}
+        </nav>
+
+        {/* Need Help */}
+        {!collapsed && (
+          <div style={{ padding: '0.875rem 1rem', borderTop: `1px solid ${SIDEBAR_BORDER}`, backgroundColor: '#0a1628' }}>
+            <div style={{ fontSize: '0.75rem', fontWeight: '600', color: '#94a3b8', marginBottom: '0.4rem' }}>Need Help?</div>
+            <div style={{ fontSize: '0.68rem', color: '#475569', lineHeight: 1.6 }}>
+              <div>Contact Support</div>
+              <div style={{ color: '#60a5fa' }}>support@auditpro.com</div>
+              <div style={{ color: '#475569' }}>+91 44 1234 5678</div>
+            </div>
+          </div>
+        )}
+
+        {/* User + logout */}
+        <div style={{ padding: collapsed ? '0.75rem 0' : '0.75rem 1rem', borderTop: `1px solid ${SIDEBAR_BORDER}`, display: 'flex', alignItems: 'center', gap: '0.625rem', justifyContent: collapsed ? 'center' : 'flex-start' }}>
+          <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: SIDEBAR_ACTIVE, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '0.75rem', fontWeight: '700', flexShrink: 0 }}>
+            {initials}
+          </div>
+          {!collapsed && (
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: '600', color: '#e2e8f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.fullName || 'User'}</div>
+              <div style={{ fontSize: '0.65rem', color: '#64748b' }}>{user?.role}</div>
+            </div>
+          )}
+          {!collapsed && (
+            <button onClick={handleLogout} title="Logout"
+              style={{ border: 'none', background: 'none', color: '#64748b', cursor: 'pointer', fontSize: '0.9rem', padding: '0.2rem', flexShrink: 0 }}>
+              ⏻
+            </button>
+          )}
         </div>
 
-        {/* User Info */}
-        <div style={{ padding: '16px', borderTop: '1px solid #1e293b' }}>
-          <div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px' }}>
-            <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: '#475569', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 'bold', color: 'white' }}>
-              {initials}
-            </div>
-            {!collapsed && (
-              <div style={{ marginLeft: '12px', overflow: 'hidden' }}>
-                <div style={{ fontSize: '13px', fontWeight: '600', color: 'white', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user?.fullName}</div>
-                <div style={{ fontSize: '11px', color: '#64748b', textTransform: 'capitalize' }}>{user?.role?.toLowerCase().replace('_', ' ')}</div>
-              </div>
-            )}
-          </div>
-          <button
-            onClick={handleLogout}
-            style={{ width: '100%', display: 'flex', alignItems: 'center', padding: '8px', border: 'none', backgroundColor: 'transparent', color: '#94a3b8', cursor: 'pointer', fontSize: '13px', borderRadius: '4px' }}
-            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#ef444422'; e.currentTarget.style.color = '#f87171'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = '#94a3b8'; }}
-          >
-            <FiLogOut />
-            {!collapsed && <span style={{ marginLeft: '12px' }}>Sign Out</span>}
-          </button>
-        </div>
+        {/* Collapse button */}
+        <button onClick={() => setCollapsed(!collapsed)}
+          style={{ position: 'absolute', top: '1.1rem', right: collapsed ? '50%' : '-12px', transform: collapsed ? 'translateX(50%)' : 'none', width: '24px', height: '24px', borderRadius: '50%', backgroundColor: '#1e293b', border: `1px solid ${SIDEBAR_BORDER}`, color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', zIndex: 101 }}>
+          {collapsed ? '›' : '‹'}
+        </button>
       </div>
 
-      {/* ── Main Content ── */}
-      <div style={{ 
-        flex: 1, 
-        marginLeft: collapsed ? '64px' : '240px', 
-        transition: 'margin-left 0.2s ease',
-        display: 'flex',
-        flexDirection: 'column',
-        minWidth: 0
-      }}>
-        
-        {/* Header */}
-        <header style={{ height: '64px', backgroundColor: 'white', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 24px', position: 'sticky', top: 0, zIndex: 90 }}>
-          <button onClick={() => setCollapsed(!collapsed)} style={{ border: 'none', backgroundColor: 'transparent', cursor: 'pointer', color: '#64748b', display: 'flex', alignItems: 'center', fontSize: '20px' }}>
-            <FiMenu />
-          </button>
+      {/* ── Main area ── */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', marginLeft: collapsed ? '64px' : '240px', transition: 'margin-left 0.2s ease', minWidth: 0 }}>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-            <div style={{ position: 'relative' }}>
-              <FiSearch style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
-              <input type="text" placeholder="Search..." style={{ padding: '8px 12px 8px 36px', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '14px', width: '200px' }} />
+        {/* Top bar */}
+        <header style={{ height: '56px', backgroundColor: 'white', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', padding: '0 1.5rem', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 50, flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Home</span>
+            <span style={{ color: '#cbd5e1' }}>›</span>
+            <span style={{ fontSize: '0.8rem', color: '#374151', fontWeight: '500' }}>
+              {NAV_GROUPS.flatMap(g => g.items).find(i => isActive(i.to))?.label || 'Dashboard'}
+            </span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <div style={{ position: 'relative', cursor: 'pointer' }}>
+              <span style={{ fontSize: '1.1rem' }}>🔔</span>
+              <span style={{ position: 'absolute', top: '-4px', right: '-4px', width: '14px', height: '14px', backgroundColor: '#dc2626', borderRadius: '50%', fontSize: '0.55rem', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '700' }}>3</span>
             </div>
-            <button style={{ border: 'none', backgroundColor: 'transparent', cursor: 'pointer', color: '#64748b', fontSize: '20px', position: 'relative' }}>
-              <FiBell />
-              <span style={{ position: 'absolute', top: '2px', right: '2px', width: '8px', height: '8px', backgroundColor: '#ef4444', borderRadius: '50%', border: '2px solid white' }}></span>
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+              <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: SIDEBAR_ACTIVE, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '0.75rem', fontWeight: '700' }}>
+                {initials}
+              </div>
+              <div>
+                <div style={{ fontSize: '0.8rem', fontWeight: '600', color: '#111827' }}>{user?.fullName || 'User'}</div>
+                <div style={{ fontSize: '0.65rem', color: '#6b7280' }}>{user?.role}</div>
+              </div>
+            </div>
           </div>
         </header>
 
-        <main style={{ flex: 1, overflowY: 'auto' }}>
+        {/* Page content */}
+        <main style={{ flex: 1, padding: '1.5rem', overflowY: 'auto' }}>
           {children}
         </main>
       </div>

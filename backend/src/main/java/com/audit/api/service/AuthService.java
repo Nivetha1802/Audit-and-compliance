@@ -30,7 +30,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final AuthenticationManager authenticationManager;
-    private final DefaultCategorySeeder categorySeeder;
+    private final ChecklistSeederService checklistSeederService;
 
     @Autowired
     public AuthService(UserRepository userRepository,
@@ -38,13 +38,13 @@ public class AuthService {
                        PasswordEncoder passwordEncoder,
                        JwtService jwtService,
                        AuthenticationManager authenticationManager,
-                       DefaultCategorySeeder categorySeeder) {
+                       ChecklistSeederService checklistSeederService) {
         this.userRepository = userRepository;
         this.organizationRepository = organizationRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.authenticationManager = authenticationManager;
-        this.categorySeeder = categorySeeder;
+        this.checklistSeederService = checklistSeederService;
     }
 
     private void validatePassword(String password) {
@@ -75,8 +75,8 @@ public class AuthService {
                         .name(request.getOrganizationName())
                         .build();
                 organization = organizationRepository.save(organization);
-                // Seed default real-estate audit categories for the new org
-                categorySeeder.seedForOrganization(organization.getId());
+                // Seed default audit checklists and categories for the new org
+                checklistSeederService.seedOrganizationData(organization.getId());
             }
         } else {
             organization = existingOrg.orElseThrow(() ->
@@ -109,6 +109,7 @@ public class AuthService {
 
         return AuthResponse.builder()
                 .token(jwtToken)
+                .refreshToken(jwtService.generateRefreshToken(user.getEmail()))
                 .organizationId(organization.getId())
                 .role(user.getRole().name())
                 .fullName(user.getFullName())
@@ -145,6 +146,46 @@ public class AuthService {
 
         return AuthResponse.builder()
                 .token(jwtToken)
+                .refreshToken(jwtService.generateRefreshToken(user.getEmail()))
+                .organizationId(user.getOrganizationId())
+                .role(user.getRole().name())
+                .fullName(user.getFullName())
+                .organizationName(organization.getName())
+                .setupRequired(setupRequired)
+                .build();
+    }
+
+    /** Exchange a valid refresh token for a new access token + new refresh token. */
+    public AuthResponse refresh(String refreshToken) {
+        String email;
+        try {
+            email = jwtService.extractUsername(refreshToken);
+        } catch (Exception e) {
+            throw new RuntimeException("Invalid or expired refresh token");
+        }
+
+        var user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        var organization = organizationRepository.findById(user.getOrganizationId())
+                .orElseThrow(() -> new RuntimeException("Organization not found"));
+
+        Map<String, Object> extraClaims = new HashMap<>();
+        extraClaims.put("organizationId", user.getOrganizationId());
+        extraClaims.put("role", user.getRole());
+
+        var newAccessToken = jwtService.generateToken(
+                org.springframework.security.core.userdetails.User.builder()
+                        .username(user.getEmail())
+                        .password(user.getPassword())
+                        .build(),
+                extraClaims
+        );
+
+        boolean setupRequired = organization.getTaxId() == null || organization.getAddress() == null;
+
+        return AuthResponse.builder()
+                .token(newAccessToken)
+                .refreshToken(jwtService.generateRefreshToken(email))
                 .organizationId(user.getOrganizationId())
                 .role(user.getRole().name())
                 .fullName(user.getFullName())

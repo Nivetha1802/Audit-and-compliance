@@ -2,6 +2,7 @@ package com.audit.api.controller;
 
 import com.audit.api.entity.Checklist;
 import com.audit.api.entity.ChecklistItem;
+import com.audit.api.dto.ChecklistItemResponse;
 import com.audit.api.service.EvidenceService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -29,11 +30,11 @@ public class EvidenceController {
         return ResponseEntity.ok(evidenceService.getOrCreateChecklist(transactionId));
     }
 
-    /** Get checklist items */
+    /** Get checklist items with document names */
     @GetMapping("/checklist/{transactionId}/items")
-    public ResponseEntity<List<ChecklistItem>> getItems(@PathVariable UUID transactionId) {
+    public ResponseEntity<List<ChecklistItemResponse>> getItems(@PathVariable UUID transactionId) {
         Checklist cl = evidenceService.getOrCreateChecklist(transactionId);
-        return ResponseEntity.ok(evidenceService.getChecklistItems(cl.getId()));
+        return ResponseEntity.ok(evidenceService.getChecklistItemsWithDocNames(cl.getId()));
     }
 
     /** Upload evidence file for a checklist item */

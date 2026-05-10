@@ -10,15 +10,75 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Auto-logout and redirect to login on 401 (expired or invalid token)
+// Track whether a refresh is already in progress to avoid parallel refresh calls
+let isRefreshing = false;
+let failedQueue = [];
+
+const processQueue = (error, token = null) => {
+  failedQueue.forEach(({ resolve, reject }) => {
+    if (error) reject(error);
+    else resolve(token);
+  });
+  failedQueue = [];
+};
+
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.href = '/login';
+  async (error) => {
+    const originalRequest = error.config;
+
+    if (error.response?.status === 401 && !originalRequest._retry &&
+        !originalRequest.url?.includes('/auth/refresh')) {
+
+      const refreshToken = localStorage.getItem('refreshToken');
+
+      if (!refreshToken) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('refreshToken');
+        localStorage.removeItem('user');
+        window.location.href = '/login';
+        return Promise.reject(error);
+      }
+
+      if (isRefreshing) {
+        return new Promise((resolve, reject) => {
+          failedQueue.push({ resolve, reject });
+        }).then(token => {
+          originalRequest.headers.Authorization = `Bearer ${token}`;
+          return api(originalRequest);
+        });
+      }
+
+      originalRequest._retry = true;
+      isRefreshing = true;
+
+      try {
+        const res = await axios.post(`${API_URL}/auth/refresh`, { refreshToken });
+        const { token: newToken, refreshToken: newRefreshToken } = res.data;
+
+        localStorage.setItem('token', newToken);
+        if (newRefreshToken) localStorage.setItem('refreshToken', newRefreshToken);
+
+        const user = JSON.parse(localStorage.getItem('user') || '{}');
+        localStorage.setItem('user', JSON.stringify({ ...user, token: newToken }));
+
+        processQueue(null, newToken);
+
+        originalRequest.headers.Authorization = `Bearer ${newToken}`;
+        return api(originalRequest);
+
+      } catch (refreshError) {
+        processQueue(refreshError, null);
+        localStorage.removeItem('token');
+        localStorage.removeItem('refreshToken');
+        localStorage.removeItem('user');
+        window.location.href = '/login';
+        return Promise.reject(refreshError);
+      } finally {
+        isRefreshing = false;
+      }
     }
+
     return Promise.reject(error);
   }
 );
@@ -32,6 +92,9 @@ export const projectApi = {
   getAll: () => api.get('/projects'),
   create: (data) => api.post('/projects', data),
   update: (id, data) => api.put(`/projects/${id}`, data),
+  getReadiness: (id) => api.get(`/projects/${id}/readiness`),
+  advanceAudit: (id, data) => api.post(`/projects/${id}/advance-audit`, data),
+  signOff: (id, data) => api.post(`/projects/${id}/sign-off`, data),
 };
 
 export const transactionApi = {
@@ -40,7 +103,12 @@ export const transactionApi = {
   importCsv: (formData) => api.post('/transactions/import', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
   importBank: (formData) => api.post('/transactions/import-bank', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
   updateStatus: (id, status) => api.patch(`/transactions/${id}/status?status=${status}`),
-  linkVendor: (id, vendorId) => api.patch(`/transactions/${id}/link-vendor?vendorId=${vendorId}`)
+  linkVendor: (id, vendorId) => {
+    const url = vendorId
+      ? `/transactions/${id}/link-vendor?vendorId=${vendorId}`
+      : `/transactions/${id}/link-vendor`;
+    return api.patch(url);
+  },
 };
 
 export const masterCategoriesApi = {
@@ -53,7 +121,7 @@ export const vendorsApi = {
   getAll: () => api.get('/vendors'),
   create: (data) => api.post('/vendors', data),
   update: (id, data) => api.put(`/vendors/${id}`, data),
-  delete: (id) => api.delete(`/vendors/${id}`)
+  delete: (id) => api.delete(`/vendors/${id}`),
 };
 
 export const findingApi = {
@@ -77,9 +145,6 @@ export const evidenceApi = {
   getChecklist: (txId) => api.get(`/evidence/checklist/${txId}`),
   getItems: (txId) => api.get(`/evidence/checklist/${txId}/items`),
   uploadEvidence: (itemId, formData) => api.post(`/evidence/upload/${itemId}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
-  analyzeEvidence: (data) => axios.post('http://localhost:5000/api/ai/analyze-evidence', data, {
-    headers: { 'Content-Type': 'multipart/form-data' }
-  }),
   removeEvidence: (itemId) => api.delete(`/evidence/item/${itemId}`),
   getReadiness: (txId) => api.get(`/evidence/readiness/${txId}`),
 };
@@ -100,7 +165,12 @@ export const dashboardApi = {
   getStats: () => api.get('/dashboard/stats'),
 };
 
+export const maintenanceApi = {
+  seedMasterData: () => api.post('/maintenance/seed-master-data'),
+};
+
 export const aiApi = {
+  threeWayMatchFromDocs: (txId) => api.post(`/ai/three-way-match-docs/${txId}`),
   threeWayMatch: (txId, data) => api.post(`/ai/three-way-match/${txId}`, data),
   budgetVariance: (projectId, data) => api.post(`/ai/budget-variance/${projectId}`, data),
   duplicateDetection: (projectId) => api.post(`/ai/duplicate-detection/${projectId}`),

@@ -4,6 +4,7 @@ import java.util.UUID;
 
 public class AuthResponse {
     private String token;
+    private String refreshToken;
     private UUID organizationId;
     private String role;
     private String fullName;
@@ -12,8 +13,9 @@ public class AuthResponse {
 
     public AuthResponse() {}
 
-    public AuthResponse(String token, UUID organizationId, String role, String fullName, String organizationName, boolean setupRequired) {
+    public AuthResponse(String token, String refreshToken, UUID organizationId, String role, String fullName, String organizationName, boolean setupRequired) {
         this.token = token;
+        this.refreshToken = refreshToken;
         this.organizationId = organizationId;
         this.role = role;
         this.fullName = fullName;
@@ -25,6 +27,7 @@ public class AuthResponse {
 
     public static class Builder {
         private String token;
+        private String refreshToken;
         private UUID organizationId;
         private String role;
         private String fullName;
@@ -32,6 +35,7 @@ public class AuthResponse {
         private boolean setupRequired;
 
         public Builder token(String token) { this.token = token; return this; }
+        public Builder refreshToken(String refreshToken) { this.refreshToken = refreshToken; return this; }
         public Builder organizationId(UUID organizationId) { this.organizationId = organizationId; return this; }
         public Builder role(String role) { this.role = role; return this; }
         public Builder fullName(String fullName) { this.fullName = fullName; return this; }
@@ -39,12 +43,14 @@ public class AuthResponse {
         public Builder setupRequired(boolean setupRequired) { this.setupRequired = setupRequired; return this; }
 
         public AuthResponse build() {
-            return new AuthResponse(token, organizationId, role, fullName, organizationName, setupRequired);
+            return new AuthResponse(token, refreshToken, organizationId, role, fullName, organizationName, setupRequired);
         }
     }
 
     public String getToken() { return token; }
     public void setToken(String token) { this.token = token; }
+    public String getRefreshToken() { return refreshToken; }
+    public void setRefreshToken(String refreshToken) { this.refreshToken = refreshToken; }
     public UUID getOrganizationId() { return organizationId; }
     public void setOrganizationId(UUID organizationId) { this.organizationId = organizationId; }
     public String getRole() { return role; }

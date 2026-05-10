@@ -35,6 +35,31 @@ public class MasterCategory extends BaseEntity {
         setOrganizationId(organizationId);
     }
 
+    public static Builder builder() {
+        return new Builder();
+    }
+
+    public static class Builder {
+        private String name;
+        private UUID organizationId;
+        private UUID parentId;
+        private int level = 1;
+
+        public Builder name(String name) { this.name = name; return this; }
+        public Builder organizationId(UUID organizationId) { this.organizationId = organizationId; return this; }
+        public Builder parentId(UUID parentId) { this.parentId = parentId; return this; }
+        public Builder level(int level) { this.level = level; return this; }
+
+        public MasterCategory build() {
+            MasterCategory mc = new MasterCategory();
+            mc.setName(name);
+            mc.setOrganizationId(organizationId);
+            mc.setParentId(parentId);
+            mc.setLevel(level);
+            return mc;
+        }
+    }
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
     public String getName() { return name; }

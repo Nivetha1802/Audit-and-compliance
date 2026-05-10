@@ -3,11 +3,11 @@ import { taskApi, userApi } from '../services/api';
 
 const PRIORITY_COLORS = { CRITICAL: '#dc2626', HIGH: '#ea580c', MEDIUM: '#d97706', LOW: '#16a34a' };
 const STATUS_COLORS   = { OPEN: '#d97706', IN_PROGRESS: '#2563eb', PENDING_REVIEW: '#7c3aed', COMPLETED: '#16a34a', REJECTED: '#dc2626' };
-const TASK_TYPES      = ['RESUBMIT_EVIDENCE', 'CLARIFICATION', 'AUDIT_REVIEW', 'COMPLIANCE_CHECK'];
+const TASK_TYPES      = ['SUBMIT_EVIDENCE', 'RESUBMIT_EVIDENCE', 'CLARIFICATION', 'AUDIT_REVIEW', 'COMPLIANCE_CHECK'];
 const PRIORITIES      = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
 const STATUSES        = ['OPEN', 'IN_PROGRESS', 'PENDING_REVIEW', 'COMPLETED', 'REJECTED'];
 
-const emptyForm = { title: '', description: '', taskType: 'RESUBMIT_EVIDENCE', priority: 'MEDIUM', assignedTo: '', dueDate: '', status: 'OPEN' };
+const emptyForm = { title: '', description: '', taskType: 'SUBMIT_EVIDENCE', priority: 'MEDIUM', assignedTo: '', dueDate: '', status: 'OPEN' };
 
 export default function Tasks() {
   const [tasks, setTasks] = useState([]);

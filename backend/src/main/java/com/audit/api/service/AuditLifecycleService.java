@@ -1,34 +1,109 @@
 package com.audit.api.service;
 
-import com.audit.api.entity.Finding;
-import com.audit.api.entity.Project;
-import com.audit.api.entity.Transaction;
-import com.audit.api.repository.FindingRepository;
-import com.audit.api.repository.ProjectRepository;
-import com.audit.api.repository.TransactionRepository;
+import com.audit.api.entity.*;
+import com.audit.api.repository.*;
+import com.audit.api.util.SecurityUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.*;
 
 @Service
 public class AuditLifecycleService {
 
-    @Autowired
-    private TransactionRepository transactionRepository;
-
-    @Autowired
-    private FindingRepository findingRepository;
-
-    @Autowired
-    private ProjectRepository projectRepository;
+    @Autowired private TransactionRepository transactionRepository;
+    @Autowired private FindingRepository findingRepository;
+    @Autowired private ProjectRepository projectRepository;
+    @Autowired private ChecklistRepository checklistRepository;
+    @Autowired private SecurityUtils securityUtils;
 
     private static final BigDecimal TOLERANCE = new BigDecimal("0.02");
+
+    // ── Audit Status Transitions ──────────────────────────────────────────────
+
+    @Transactional
+    public Project advanceAuditStatus(UUID projectId, String targetStatus,
+                                       LocalDate auditPeriodStart, LocalDate auditPeriodEnd,
+                                       LocalDate auditDeadline) {
+        Project project = getProject(projectId);
+        validateTransition(project.getAuditStatus(), targetStatus);
+        project.setAuditStatus(targetStatus);
+        if (auditPeriodStart != null) project.setAuditPeriodStart(auditPeriodStart);
+        if (auditPeriodEnd   != null) project.setAuditPeriodEnd(auditPeriodEnd);
+        if (auditDeadline    != null) project.setAuditDeadline(auditDeadline);
+        return projectRepository.save(project);
+    }
+
+    @Transactional
+    public Project signOff(UUID projectId, String notes) {
+        Project project = getProject(projectId);
+        User ca = securityUtils.getCurrentUser();
+        if (!List.of("AUDITOR", "ADMIN").contains(ca.getRole().name())) {
+            throw new RuntimeException("Only an Auditor or Admin can sign off a project.");
+        }
+        AuditReadinessCheck check = getReadinessCheck(projectId);
+        if (check.openCriticalFindings() > 0) {
+            throw new RuntimeException("Cannot sign off: " + check.openCriticalFindings() + " CRITICAL finding(s) are still open.");
+        }
+        project.setAuditStatus("SIGNED_OFF");
+        project.setStatus("COMPLETED");
+        project.setSignedOffBy(ca.getId());
+        project.setSignedOffAt(LocalDateTime.now());
+        project.setSignOffNotes(notes);
+        project.setLocked(true);
+        return projectRepository.save(project);
+    }
+
+    public AuditReadinessCheck getReadinessCheck(UUID projectId) {
+        UUID orgId = securityUtils.getCurrentOrganizationId();
+        Project project = getProject(projectId);
+        List<Transaction> transactions = transactionRepository.findByOrganizationIdAndProjectId(orgId, projectId);
+        List<Finding> findings = findingRepository.findByOrganizationId(orgId);
+        List<Checklist> checklists = checklistRepository.findByOrganizationId(orgId);
+
+        long totalTx      = transactions.size();
+        long approvedTx   = transactions.stream().filter(t -> "APPROVED".equals(t.getStatus())).count();
+        long pendingTx    = transactions.stream().filter(t -> "PENDING_EVIDENCE".equals(t.getStatus())).count();
+        long openFindings = findings.stream().filter(f -> !"CLOSED".equals(f.getStatus())).count();
+        long criticalOpen = findings.stream().filter(f -> "CRITICAL".equals(f.getSeverity()) && !"CLOSED".equals(f.getStatus())).count();
+        long completedCL  = checklists.stream().filter(Checklist::isCompleted).count();
+        int readinessPct  = totalTx == 0 ? 0 : (int) Math.round((approvedTx * 100.0) / totalTx);
+
+        return new AuditReadinessCheck(project.getAuditStatus(), totalTx, approvedTx, pendingTx,
+                openFindings, criticalOpen, completedCL, checklists.size(), readinessPct, project.isLocked());
+    }
+
+    private void validateTransition(String current, String target) {
+        Map<String, List<String>> allowed = Map.of(
+            "DRAFT",        List.of("IN_PROGRESS"),
+            "IN_PROGRESS",  List.of("UNDER_REVIEW", "DRAFT"),
+            "UNDER_REVIEW", List.of("SIGNED_OFF", "IN_PROGRESS"),
+            "SIGNED_OFF",   List.of("CLOSED"),
+            "CLOSED",       List.of()
+        );
+        String cur = current != null ? current : "DRAFT";
+        if (!allowed.getOrDefault(cur, List.of()).contains(target)) {
+            throw new RuntimeException("Invalid audit status transition: " + cur + " → " + target);
+        }
+    }
+
+    private Project getProject(UUID id) {
+        return projectRepository.findById(id)
+                .filter(p -> p.getOrganizationId().equals(securityUtils.getCurrentOrganizationId()))
+                .orElseThrow(() -> new RuntimeException("Project not found"));
+    }
+
+    public record AuditReadinessCheck(
+        String auditStatus, long totalTransactions, long approvedTransactions,
+        long pendingEvidenceTransactions, long openFindings, long openCriticalFindings,
+        long checklistsCompleted, long checklistsTotal, int readinessPct, boolean locked
+    ) {}
+
+    // ── Transaction Compliance Validation ────────────────────────────────────
 
     @Transactional
     public void validateTransaction(UUID transactionId) {

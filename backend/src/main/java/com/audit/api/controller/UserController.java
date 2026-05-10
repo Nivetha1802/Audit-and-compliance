@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -26,11 +27,11 @@ public class UserController {
         this.securityUtils = securityUtils;
         this.passwordEncoder = passwordEncoder;
     }
+
     @GetMapping
-    public ResponseEntity<java.util.List<User>> getAllUsers() {
+    public ResponseEntity<List<User>> getAllUsers() {
         return ResponseEntity.ok(userRepository.findByOrganizationId(securityUtils.getCurrentOrganizationId()));
     }
-
 
     @GetMapping("/me")
     public ResponseEntity<User> getCurrentUser() {
@@ -45,7 +46,6 @@ public class UserController {
             user.setFullName(updates.get("fullName"));
         }
         if (updates.containsKey("email") && !updates.get("email").isBlank()) {
-            // Check email not already taken by another user
             userRepository.findByEmail(updates.get("email"))
                     .filter(existing -> !existing.getId().equals(user.getId()))
                     .ifPresent(existing -> { throw new RuntimeException("Email already in use"); });

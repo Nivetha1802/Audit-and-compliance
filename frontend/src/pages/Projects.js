@@ -1,63 +1,65 @@
 import React, { useState, useEffect } from 'react';
-import { projectApi, userApi, masterCategoriesApi } from '../services/api';
+import { projectApi, userApi } from '../services/api';
 
 const STATUS_COLORS = {
-  ACTIVE:    { bg: '#d1fae5', text: '#065f46' },
-  COMPLETED: { bg: '#dbeafe', text: '#1e40af' },
-  SUSPENDED: { bg: '#fee2e2', text: '#991b1b' },
+  ACTIVE:      { bg: '#d1fae5', text: '#065f46' },
+  COMPLETED:   { bg: '#dbeafe', text: '#1e40af' },
+  SUSPENDED:   { bg: '#fee2e2', text: '#991b1b' },
   IN_PROGRESS: { bg: '#fef3c7', text: '#92400e' },
-  PARTIAL: { bg: '#ffedd5', text: '#9a3412' },
+  PARTIAL:     { bg: '#ffedd5', text: '#9a3412' },
+};
+
+const AUDIT_STATUS_COLORS = {
+  DRAFT:        { bg: '#f3f4f6', text: '#374151' },
+  IN_PROGRESS:  { bg: '#fef3c7', text: '#92400e' },
+  UNDER_REVIEW: { bg: '#dbeafe', text: '#1e40af' },
+  SIGNED_OFF:   { bg: '#d1fae5', text: '#065f46' },
+  CLOSED:       { bg: '#e5e7eb', text: '#6b7280' },
+};
+
+const AUDIT_TRANSITIONS = {
+  DRAFT:        'IN_PROGRESS',
+  IN_PROGRESS:  'UNDER_REVIEW',
+  UNDER_REVIEW: 'SIGNED_OFF',
 };
 
 const RISK_COLORS = {
-  COMPLIANT: { bg: '#d1fae5', text: '#065f46' },
-  AT_RISK: { bg: '#fee2e2', text: '#991b1b' },
+  COMPLIANT:    { bg: '#d1fae5', text: '#065f46' },
+  AT_RISK:      { bg: '#fee2e2', text: '#991b1b' },
   NEEDS_REVIEW: { bg: '#ffedd5', text: '#9a3412' },
 };
+
 const emptyForm = {
   name: '', projectCode: '', description: '',
   startDate: '', endDate: '', totalBudget: '',
-  categories: [], projectOwnerId: '', auditorId: '',
+  projectOwnerId: '', auditorId: '',
 };
-
-/** Build a grouped tree from flat MasterCategory list (3 levels) */
-function buildTree(flatCats) {
-  const l1 = flatCats.filter(c => c.level === 1);
-  const l2 = flatCats.filter(c => c.level === 2);
-  const l3 = flatCats.filter(c => c.level === 3);
-
-  return l1.map(p => ({
-    ...p,
-    children: l2.filter(c => c.parentId === p.id).map(s => ({
-      ...s,
-      children: l3.filter(c => c.parentId === s.id)
-    })),
-  }));
-}
 
 export default function Projects() {
   const [projects, setProjects] = useState([]);
   const [users, setUsers] = useState([]);
-  const [catTree, setCatTree] = useState([]); 
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [auditPanel, setAuditPanel] = useState(null);
+  const [auditDates, setAuditDates] = useState({ auditPeriodStart: '', auditPeriodEnd: '', auditDeadline: '' });
+  const [signOffNotes, setSignOffNotes] = useState('');
+  const [readiness, setReadiness] = useState(null);
+  const [auditWorking, setAuditWorking] = useState(false);
 
   useEffect(() => { fetchData(); }, []);
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [projectsRes, usersRes, catsRes] = await Promise.all([
+      const [projectsRes, usersRes] = await Promise.all([
         projectApi.getAll(),
         userApi.getAll(),
-        masterCategoriesApi.getAll(),
       ]);
-      setProjects(projectsRes.data);
-      setUsers(usersRes.data);
-      setCatTree(buildTree(catsRes.data));
+      setProjects(Array.isArray(projectsRes.data) ? projectsRes.data : []);
+      setUsers(Array.isArray(usersRes.data) ? usersRes.data : []);
     } catch (err) {
       console.error('Error fetching data', err);
     } finally {
@@ -65,21 +67,17 @@ export default function Projects() {
     }
   };
 
-  const toggleCategory = (name) => {
-    const current = Array.isArray(form.categories) ? form.categories : [];
-    const updated = current.includes(name) ? current.filter(c => c !== name) : [...current, name];
-    setForm({ ...form, categories: updated });
-  };
-
   const handleEdit = (p) => {
     setEditingId(p.id);
     setForm({
-      ...p,
-      categories: p.categories ? p.categories.split(',') : [],
-      totalBudget: p.totalBudget || '',
+      name: p.name || '',
+      projectCode: p.projectCode || '',
       description: p.description || '',
       startDate: p.startDate || '',
       endDate: p.endDate || '',
+      totalBudget: p.totalBudget || '',
+      projectOwnerId: p.projectOwnerId || '',
+      auditorId: p.auditorId || '',
     });
     setShowForm(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -92,12 +90,16 @@ export default function Projects() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    const cats = Array.isArray(form.categories) ? form.categories : [];
-    if (cats.length === 0) { setError('Please select at least one category'); return; }
     try {
-      const payload = { ...form, categories: cats.join(','), totalBudget: form.totalBudget ? parseFloat(form.totalBudget) : null };
-      if (editingId) { await projectApi.update(editingId, payload); }
-      else { await projectApi.create(payload); }
+      const payload = {
+        ...form,
+        totalBudget: form.totalBudget ? parseFloat(form.totalBudget) : null,
+      };
+      if (editingId) {
+        await projectApi.update(editingId, payload);
+      } else {
+        await projectApi.create(payload);
+      }
       handleCancel();
       fetchData();
     } catch (err) {
@@ -105,9 +107,50 @@ export default function Projects() {
     }
   };
 
+  const openAuditPanel = async (p) => {
+    setAuditPanel(p);
+    setAuditDates({
+      auditPeriodStart: p.auditPeriodStart || '',
+      auditPeriodEnd: p.auditPeriodEnd || '',
+      auditDeadline: p.auditDeadline || '',
+    });
+    setSignOffNotes('');
+    setReadiness(null);
+    try {
+      const res = await projectApi.getReadiness(p.id);
+      setReadiness(res.data);
+    } catch { /* readiness optional */ }
+  };
+
+  const handleAdvanceAudit = async () => {
+    if (!auditPanel) return;
+    setAuditWorking(true);
+    try {
+      const nextStatus = AUDIT_TRANSITIONS[auditPanel.auditStatus || 'DRAFT'];
+      if (!nextStatus) return;
+      await projectApi.advanceAudit(auditPanel.id, { targetStatus: nextStatus, ...auditDates });
+      setAuditPanel(null);
+      fetchData();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to advance audit status');
+    } finally { setAuditWorking(false); }
+  };
+
+  const handleSignOff = async () => {
+    if (!auditPanel) return;
+    if (!window.confirm('Sign off this project? This will lock it and cannot be undone.')) return;
+    setAuditWorking(true);
+    try {
+      await projectApi.signOff(auditPanel.id, { notes: signOffNotes });
+      setAuditPanel(null);
+      fetchData();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Sign-off failed');
+    } finally { setAuditWorking(false); }
+  };
+
   const inputStyle = { width: '100%', padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: '0.25rem', boxSizing: 'border-box' };
   const labelStyle = { display: 'block', marginBottom: '0.375rem', fontWeight: '500', fontSize: '0.875rem' };
-  const cats = Array.isArray(form.categories) ? form.categories : [];
 
   if (loading && projects.length === 0) return <div style={{ padding: '2rem', color: '#6b7280' }}>Loading...</div>;
 
@@ -124,64 +167,38 @@ export default function Projects() {
       {showForm && (
         <div style={{ backgroundColor: 'white', padding: '1.5rem', borderRadius: '0.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', marginBottom: '2rem' }}>
           <h3 style={{ marginTop: 0 }}>{editingId ? 'Edit Project' : 'Create New Project'}</h3>
+          <p style={{ fontSize: '0.8rem', color: '#6b7280', marginTop: '-0.5rem', marginBottom: '1rem' }}>
+            The project will use all categories configured in your organisation settings.
+          </p>
           {error && <div style={{ marginBottom: '1rem', padding: '0.75rem', backgroundColor: '#fee2e2', color: '#991b1b', borderRadius: '0.25rem', fontSize: '0.875rem' }}>{error}</div>}
 
           <form onSubmit={handleSubmit} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-            <div><label style={labelStyle}>Project Name *</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={inputStyle} required /></div>
-            <div><label style={labelStyle}>Project Code *</label><input value={form.projectCode} onChange={(e) => setForm({ ...form, projectCode: e.target.value })} style={inputStyle} required /></div>
-            <div><label style={labelStyle}>Start Date *</label><input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} style={inputStyle} required /></div>
-            <div><label style={labelStyle}>End Date *</label><input type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} style={inputStyle} required /></div>
-            <div><label style={labelStyle}>Total Budget (₹)</label><input type="number" value={form.totalBudget} onChange={(e) => setForm({ ...form, totalBudget: e.target.value })} style={inputStyle} min="0" step="0.01" /></div>
-
-            {/* 3-level category selector */}
-            <div style={{ gridColumn: 'span 2' }}>
-              <label style={labelStyle}>Project Categories *</label>
-              <div style={{ border: '1px solid #d1d5db', borderRadius: '0.375rem', maxHeight: '400px', overflowY: 'auto' }}>
-                {catTree.length === 0 ? <div style={{ padding: '1rem', fontSize: '0.875rem', color: '#6b7280' }}>No categories configured in Settings.</div> : catTree.map((l1) => (
-                  <div key={l1.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 0.75rem', backgroundColor: '#eff6ff', color: '#1e40af', fontWeight: '600', fontSize: '0.85rem' }}>
-                      <input type="checkbox" checked={cats.includes(l1.name)} onChange={() => toggleCategory(l1.name)} />
-                      {l1.name} (L1)
-                    </label>
-                    <div style={{ padding: '0.25rem 1.5rem' }}>
-                      {l1.children.map(l2 => (
-                        <div key={l2.id} style={{ marginBottom: '0.25rem' }}>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.25rem 0', fontWeight: '500', fontSize: '0.8rem', color: '#374151' }}>
-                            <input type="checkbox" checked={cats.includes(l2.name)} onChange={() => toggleCategory(l2.name)} />
-                            {l2.name} (L2)
-                          </label>
-                          <div style={{ paddingLeft: '1.5rem', display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
-                            {l2.children.map(l3 => (
-                              <label key={l3.id} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.75rem', backgroundColor: cats.includes(l3.name) ? '#dcfce7' : '#f9fafb', padding: '0.1rem 0.5rem', borderRadius: '4px', border: '1px solid #e5e7eb' }}>
-                                <input type="checkbox" checked={cats.includes(l3.name)} onChange={() => toggleCategory(l3.name)} />
-                                {l3.name}
-                              </label>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
+            <div><label style={labelStyle}>Project Name *</label><input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} style={inputStyle} required /></div>
+            <div><label style={labelStyle}>Project Code *</label><input value={form.projectCode} onChange={e => setForm({ ...form, projectCode: e.target.value })} style={inputStyle} required /></div>
+            <div><label style={labelStyle}>Start Date *</label><input type="date" value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value })} style={inputStyle} required /></div>
+            <div><label style={labelStyle}>End Date *</label><input type="date" value={form.endDate} onChange={e => setForm({ ...form, endDate: e.target.value })} style={inputStyle} required /></div>
+            <div style={{ gridColumn: 'span 2' }}><label style={labelStyle}>Total Budget (₹)</label><input type="number" value={form.totalBudget} onChange={e => setForm({ ...form, totalBudget: e.target.value })} style={inputStyle} min="0" step="0.01" /></div>
             <div>
               <label style={labelStyle}>Project Owner *</label>
-              <select value={form.projectOwnerId} onChange={(e) => setForm({ ...form, projectOwnerId: e.target.value })} style={inputStyle} required>
+              <select value={form.projectOwnerId} onChange={e => setForm({ ...form, projectOwnerId: e.target.value })} style={inputStyle} required>
                 <option value="">Select Owner</option>
                 {users.map(u => <option key={u.id} value={u.id}>{u.fullName}</option>)}
               </select>
             </div>
             <div>
               <label style={labelStyle}>Auditor *</label>
-              <select value={form.auditorId} onChange={(e) => setForm({ ...form, auditorId: e.target.value })} style={inputStyle} required>
+              <select value={form.auditorId} onChange={e => setForm({ ...form, auditorId: e.target.value })} style={inputStyle} required>
                 <option value="">Select Auditor</option>
-                {users.filter(u => u.role === 'AUDITOR' || u.role === 'ADMIN').map(u => <option key={u.id} value={u.id}>{u.fullName}</option>)}
+                {users.filter(u => {
+                  const r = String(u.role || '').toUpperCase();
+                  return r === 'AUDITOR' || r === 'ADMIN';
+                }).map(u => <option key={u.id} value={u.id}>{u.fullName}</option>)}
               </select>
             </div>
             <div style={{ gridColumn: 'span 2' }}>
-              <button type="submit" style={{ width: '100%', padding: '0.75rem', backgroundColor: '#10b981', color: 'white', border: 'none', borderRadius: '0.375rem', fontWeight: '600' }}>{editingId ? 'Update Project' : 'Create Project'}</button>
+              <button type="submit" style={{ width: '100%', padding: '0.75rem', backgroundColor: '#10b981', color: 'white', border: 'none', borderRadius: '0.375rem', fontWeight: '600' }}>
+                {editingId ? 'Update Project' : 'Create Project'}
+              </button>
             </div>
           </form>
         </div>
@@ -201,20 +218,14 @@ export default function Projects() {
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.4rem' }}>
                   <div style={{ display: 'flex', gap: '0.4rem' }}>
                     <button onClick={() => handleEdit(p)} style={{ padding: '0.2rem 0.5rem', backgroundColor: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '0.25rem', fontSize: '0.75rem' }}>Edit</button>
+                    <button onClick={() => openAuditPanel(p)} style={{ padding: '0.2rem 0.5rem', backgroundColor: '#ede9fe', border: '1px solid #c4b5fd', borderRadius: '0.25rem', fontSize: '0.75rem', color: '#5b21b6', fontWeight: '500' }}>Audit</button>
                     <span style={{ padding: '0.2rem 0.6rem', borderRadius: '9999px', fontSize: '0.75rem', fontWeight: '500', backgroundColor: colors.bg, color: colors.text }}>{p.status}</span>
                   </div>
                   <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                    {(() => { const ac = AUDIT_STATUS_COLORS[p.auditStatus || 'DRAFT'] || AUDIT_STATUS_COLORS.DRAFT; return <span style={{ padding: '0.15rem 0.5rem', borderRadius: '4px', fontSize: '0.65rem', fontWeight: 'bold', backgroundColor: ac.bg, color: ac.text }}>Audit: {p.auditStatus || 'DRAFT'}</span>; })()}
                     <span style={{ padding: '0.2rem 0.6rem', borderRadius: '4px', fontSize: '0.65rem', fontWeight: 'bold', backgroundColor: riskColors.bg, color: riskColors.text }}>{p.riskStatus || 'UNRATED'}</span>
                     <span style={{ fontSize: '0.65rem', fontWeight: 'bold', color: '#4b5563' }}>{Math.round(p.complianceScore || 0)}%</span>
                   </div>
-                </div>
-              </div>
-              <div style={{ marginBottom: '0.75rem' }}>
-                <div style={{ fontSize: '0.75rem', fontWeight: '500', color: '#6b7280', marginBottom: '0.3rem' }}>Categories</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
-                  {p.categories?.split(',').map(c => (
-                    <span key={c} style={{ backgroundColor: '#eff6ff', color: '#1e40af', padding: '0.15rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.75rem', border: '1px solid #bfdbfe' }}>{c}</span>
-                  ))}
                 </div>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.3rem', fontSize: '0.8rem', color: '#374151' }}>
@@ -225,6 +236,90 @@ export default function Projects() {
           );
         })}
       </div>
+
+      {/* ── Audit Lifecycle Panel ── */}
+      {auditPanel && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ backgroundColor: 'white', borderRadius: '0.75rem', padding: '1.5rem', width: '520px', maxWidth: '95vw', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem' }}>
+              <div>
+                <h3 style={{ margin: 0 }}>Audit Lifecycle — {auditPanel.name}</h3>
+                <div style={{ fontSize: '0.8rem', color: '#6b7280', marginTop: '0.25rem' }}>
+                  Current audit status: <strong>{auditPanel.auditStatus || 'DRAFT'}</strong>
+                  {auditPanel.locked && <span style={{ marginLeft: '0.5rem', color: '#dc2626', fontWeight: '600' }}>🔒 Locked</span>}
+                </div>
+              </div>
+              <button onClick={() => setAuditPanel(null)} style={{ border: 'none', background: 'none', fontSize: '1.25rem', cursor: 'pointer', color: '#6b7280' }}>✕</button>
+            </div>
+
+            {readiness && (
+              <div style={{ padding: '0.75rem', backgroundColor: '#f9fafb', borderRadius: '0.5rem', marginBottom: '1.25rem', fontSize: '0.8rem' }}>
+                <div style={{ fontWeight: '600', marginBottom: '0.5rem' }}>Audit Readiness</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
+                  <div>Transactions: <strong>{readiness.approvedTransactions}/{readiness.totalTransactions}</strong> approved</div>
+                  <div>Pending evidence: <strong>{readiness.pendingEvidenceTransactions}</strong></div>
+                  <div>Open findings: <strong style={{ color: readiness.openFindings > 0 ? '#dc2626' : '#16a34a' }}>{readiness.openFindings}</strong></div>
+                  <div>Critical open: <strong style={{ color: readiness.openCriticalFindings > 0 ? '#dc2626' : '#16a34a' }}>{readiness.openCriticalFindings}</strong></div>
+                  <div style={{ gridColumn: 'span 2' }}>
+                    Readiness: <strong>{readiness.readinessPct}%</strong>
+                    <div style={{ height: '6px', backgroundColor: '#e5e7eb', borderRadius: '3px', marginTop: '0.25rem' }}>
+                      <div style={{ height: '100%', width: `${readiness.readinessPct}%`, backgroundColor: readiness.readinessPct >= 80 ? '#16a34a' : '#d97706', borderRadius: '3px' }} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {!auditPanel.locked && AUDIT_TRANSITIONS[auditPanel.auditStatus || 'DRAFT'] && (
+              <div style={{ marginBottom: '1.25rem' }}>
+                <div style={{ fontWeight: '600', fontSize: '0.875rem', marginBottom: '0.75rem' }}>
+                  Advance to: <span style={{ color: '#2563eb' }}>{AUDIT_TRANSITIONS[auditPanel.auditStatus || 'DRAFT']}</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '500', marginBottom: '0.25rem' }}>Audit Period Start</label>
+                    <input type="date" value={auditDates.auditPeriodStart} onChange={e => setAuditDates({ ...auditDates, auditPeriodStart: e.target.value })}
+                      style={{ width: '100%', padding: '0.4rem', border: '1px solid #d1d5db', borderRadius: '0.25rem', fontSize: '0.8rem', boxSizing: 'border-box' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '500', marginBottom: '0.25rem' }}>Audit Period End</label>
+                    <input type="date" value={auditDates.auditPeriodEnd} onChange={e => setAuditDates({ ...auditDates, auditPeriodEnd: e.target.value })}
+                      style={{ width: '100%', padding: '0.4rem', border: '1px solid #d1d5db', borderRadius: '0.25rem', fontSize: '0.8rem', boxSizing: 'border-box' }} />
+                  </div>
+                  <div style={{ gridColumn: 'span 2' }}>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '500', marginBottom: '0.25rem' }}>Audit Deadline</label>
+                    <input type="date" value={auditDates.auditDeadline} onChange={e => setAuditDates({ ...auditDates, auditDeadline: e.target.value })}
+                      style={{ width: '100%', padding: '0.4rem', border: '1px solid #d1d5db', borderRadius: '0.25rem', fontSize: '0.8rem', boxSizing: 'border-box' }} />
+                  </div>
+                </div>
+                <button onClick={handleAdvanceAudit} disabled={auditWorking}
+                  style={{ width: '100%', padding: '0.625rem', backgroundColor: auditWorking ? '#e5e7eb' : '#2563eb', color: auditWorking ? '#6b7280' : 'white', border: 'none', borderRadius: '0.375rem', cursor: auditWorking ? 'not-allowed' : 'pointer', fontWeight: '500' }}>
+                  {auditWorking ? 'Processing...' : `Advance to ${AUDIT_TRANSITIONS[auditPanel.auditStatus || 'DRAFT']}`}
+                </button>
+              </div>
+            )}
+
+            {!auditPanel.locked && auditPanel.auditStatus === 'UNDER_REVIEW' && (
+              <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '1rem' }}>
+                <div style={{ fontWeight: '600', fontSize: '0.875rem', marginBottom: '0.5rem', color: '#065f46' }}>✍ CA Sign-Off</div>
+                <textarea value={signOffNotes} onChange={e => setSignOffNotes(e.target.value)}
+                  placeholder="Sign-off notes (optional)..." rows={2}
+                  style={{ width: '100%', padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: '0.25rem', fontSize: '0.8rem', boxSizing: 'border-box', resize: 'vertical', marginBottom: '0.5rem' }} />
+                <button onClick={handleSignOff} disabled={auditWorking}
+                  style={{ width: '100%', padding: '0.625rem', backgroundColor: auditWorking ? '#e5e7eb' : '#10b981', color: auditWorking ? '#6b7280' : 'white', border: 'none', borderRadius: '0.375rem', cursor: auditWorking ? 'not-allowed' : 'pointer', fontWeight: '500' }}>
+                  {auditWorking ? 'Processing...' : '🔒 Sign Off & Lock Project'}
+                </button>
+              </div>
+            )}
+
+            {auditPanel.locked && (
+              <div style={{ padding: '0.75rem', backgroundColor: '#f0fdf4', border: '1px solid #86efac', borderRadius: '0.375rem', fontSize: '0.8rem', color: '#065f46', textAlign: 'center' }}>
+                ✅ This project has been signed off and is locked.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

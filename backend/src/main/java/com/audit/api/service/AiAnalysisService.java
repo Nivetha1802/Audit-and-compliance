@@ -1,11 +1,7 @@
 package com.audit.api.service;
 
-import com.audit.api.entity.AiAnalysisResult;
-import com.audit.api.entity.Document;
-import com.audit.api.entity.Transaction;
-import com.audit.api.repository.AiAnalysisResultRepository;
-import com.audit.api.repository.DocumentRepository;
-import com.audit.api.repository.TransactionRepository;
+import com.audit.api.entity.*;
+import com.audit.api.repository.*;
 import com.audit.api.util.SecurityUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -35,6 +31,8 @@ public class AiAnalysisService {
     private final AiAnalysisResultRepository resultRepository;
     private final TransactionRepository transactionRepository;
     private final DocumentRepository documentRepository;
+    private final ChecklistRepository checklistRepository;
+    private final ChecklistItemRepository checklistItemRepository;
     private final SecurityUtils securityUtils;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final RestTemplate restTemplate = new RestTemplate();
@@ -43,14 +41,159 @@ public class AiAnalysisService {
     public AiAnalysisService(AiAnalysisResultRepository resultRepository,
                               TransactionRepository transactionRepository,
                               DocumentRepository documentRepository,
+                              ChecklistRepository checklistRepository,
+                              ChecklistItemRepository checklistItemRepository,
                               SecurityUtils securityUtils) {
         this.resultRepository = resultRepository;
         this.transactionRepository = transactionRepository;
         this.documentRepository = documentRepository;
+        this.checklistRepository = checklistRepository;
+        this.checklistItemRepository = checklistItemRepository;
         this.securityUtils = securityUtils;
     }
 
-    // ── Three-Way Match ──────────────────────────────────────────────────────
+    // ── Three-Way Match from uploaded checklist documents ────────────────────
+
+    /**
+     * Finds PO, GRN, and Invoice documents from the transaction's checklist items
+     * (matched by description keywords), extracts amounts using Gemini, then runs
+     * the three-way match comparison.
+     *
+     * Checklist item descriptions must contain keywords:
+     *   PO:      "purchase order", "po"
+     *   GRN:     "grn", "goods receipt", "delivery note"
+     *   Invoice: "invoice", "bill"
+     */
+    @Transactional
+    public AiAnalysisResult runThreeWayMatchFromDocuments(UUID transactionId) {
+        UUID orgId = securityUtils.getCurrentOrganizationId();
+
+        Transaction tx = transactionRepository.findById(transactionId)
+                .orElseThrow(() -> new RuntimeException("Transaction not found"));
+
+        // Walk: transaction → checklist → checklist items → documents
+        Checklist checklist = checklistRepository.findByTransactionId(transactionId)
+                .orElse(null);
+
+        Map<String, JsonNode> extracted = new HashMap<>();
+
+        if (checklist != null) {
+            List<ChecklistItem> items = checklistItemRepository.findByChecklistId(checklist.getId());
+            for (ChecklistItem item : items) {
+                if (item.getDocumentId() == null) continue;
+
+                String desc = item.getDescription() != null ? item.getDescription().toLowerCase() : "";
+                String docType;
+                if (desc.contains("purchase order") || desc.contains(" po") || desc.startsWith("po")) {
+                    docType = "PO";
+                } else if (desc.contains("grn") || desc.contains("goods receipt") || desc.contains("delivery note")) {
+                    docType = "GRN";
+                } else if (desc.contains("invoice") || desc.contains("bill")) {
+                    docType = "INVOICE";
+                } else {
+                    continue;
+                }
+
+                if (extracted.containsKey(docType)) continue; // use first match per type
+
+                documentRepository.findById(item.getDocumentId()).ifPresent(doc -> {
+                    JsonNode docData = extractDocumentData(doc, docType);
+                    extracted.put(docType, docData);
+                });
+            }
+        }
+
+        if (extracted.isEmpty()) {
+            ObjectNode error = objectMapper.createObjectNode();
+            error.put("result", "NEEDS_REVIEW");
+            error.put("confidence", 0.0);
+            error.put("needs_human_review", true);
+            ArrayNode issues = error.putArray("issues");
+            issues.add("No PO, GRN, or Invoice documents found. Upload evidence with checklist item " +
+                    "descriptions containing 'Purchase Order', 'GRN', or 'Invoice'.");
+            return saveResult(transactionId, orgId, "THREE_WAY_MATCH", error);
+        }
+
+        // Build payload
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("transaction_amount", tx.getAmount() != null ? tx.getAmount().doubleValue() : 0);
+        payload.set("po",      extracted.getOrDefault("PO",      objectMapper.createObjectNode()));
+        payload.set("grn",     extracted.getOrDefault("GRN",     objectMapper.createObjectNode()));
+        payload.set("invoice", extracted.getOrDefault("INVOICE", objectMapper.createObjectNode()));
+
+        JsonNode response = callAiService("/three-way-match-from-docs", payload);
+
+        // Persist extracted values back onto the transaction
+        persistExtracted(tx, extracted);
+        transactionRepository.save(tx);
+
+        return saveResult(transactionId, orgId, "THREE_WAY_MATCH", response);
+    }
+
+    private void persistExtracted(Transaction tx, Map<String, JsonNode> extracted) {
+        if (extracted.containsKey("PO")) {
+            JsonNode po = extracted.get("PO");
+            if (!po.path("amount").isMissingNode() && !po.path("amount").isNull())
+                tx.setPoAmount(java.math.BigDecimal.valueOf(po.path("amount").asDouble()));
+            if (!po.path("doc_number").isMissingNode() && !po.path("doc_number").isNull())
+                tx.setPoNumber(po.path("doc_number").asText());
+            if (!po.path("vendor").isMissingNode() && !po.path("vendor").isNull() && tx.getVendorCustomer() == null)
+                tx.setVendorCustomer(po.path("vendor").asText());
+        }
+        if (extracted.containsKey("GRN")) {
+            JsonNode grn = extracted.get("GRN");
+            if (!grn.path("amount").isMissingNode() && !grn.path("amount").isNull())
+                tx.setGrnAmount(java.math.BigDecimal.valueOf(grn.path("amount").asDouble()));
+            if (!grn.path("doc_number").isMissingNode() && !grn.path("doc_number").isNull())
+                tx.setGrnNumber(grn.path("doc_number").asText());
+        }
+        if (extracted.containsKey("INVOICE")) {
+            JsonNode inv = extracted.get("INVOICE");
+            if (!inv.path("amount").isMissingNode() && !inv.path("amount").isNull())
+                tx.setInvoiceAmount(java.math.BigDecimal.valueOf(inv.path("amount").asDouble()));
+            if (!inv.path("doc_number").isMissingNode() && !inv.path("doc_number").isNull())
+                tx.setInvoiceNumber(inv.path("doc_number").asText());
+        }
+    }
+
+    private JsonNode extractDocumentData(Document doc, String docTypeHint) {
+        try {
+            byte[] fileBytes = Files.readAllBytes(Paths.get(doc.getFilePath()));
+            String mimeType = doc.getFileType() != null ? doc.getFileType() : "application/octet-stream";
+            String fileName = doc.getFileName() != null ? doc.getFileName() : "document";
+
+            HttpHeaders fileHeaders = new HttpHeaders();
+            fileHeaders.setContentType(MediaType.parseMediaType(mimeType));
+            fileHeaders.setContentDispositionFormData("file", fileName);
+            ByteArrayResource fileResource = new ByteArrayResource(fileBytes) {
+                @Override public String getFilename() { return fileName; }
+            };
+            HttpEntity<ByteArrayResource> filePart = new HttpEntity<>(fileResource, fileHeaders);
+
+            HttpHeaders typeHeaders = new HttpHeaders();
+            typeHeaders.setContentType(MediaType.TEXT_PLAIN);
+            HttpEntity<String> typePart = new HttpEntity<>(docTypeHint, typeHeaders);
+
+            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+            body.add("file", filePart);
+            body.add("doc_type", typePart);
+
+            HttpHeaders requestHeaders = new HttpHeaders();
+            requestHeaders.setContentType(MediaType.MULTIPART_FORM_DATA);
+
+            HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, requestHeaders);
+            ResponseEntity<String> response = restTemplate.postForEntity(
+                    aiServiceUrl + "/extract-document", requestEntity, String.class);
+
+            return objectMapper.readTree(response.getBody());
+        } catch (Exception e) {
+            ObjectNode err = objectMapper.createObjectNode();
+            err.put("error", e.getMessage());
+            return err;
+        }
+    }
+
+    // ── Three-Way Match (manual amounts) ─────────────────────────────────────
 
     @Transactional
     public AiAnalysisResult runThreeWayMatch(UUID transactionId,
@@ -265,10 +408,10 @@ public class AiAnalysisService {
         }
     }
 
-    private AiAnalysisResult saveResult(UUID transactionId, UUID orgId, 
+    private AiAnalysisResult saveResult(UUID transactionId, UUID orgId,
                                          String analysisType, JsonNode response) {
-        AiAnalysisResult result = null;
-        
+        AiAnalysisResult result;
+
         if (transactionId != null) {
             result = resultRepository.findByTransactionIdAndAnalysisType(transactionId, analysisType)
                     .orElse(new AiAnalysisResult());
@@ -283,10 +426,11 @@ public class AiAnalysisService {
 
         result.setTransactionId(transactionId);
         result.setOrganizationId(orgId);
+        result.setAnalysisType(analysisType);
+
         if (response.has("extracted_amount") && !response.path("extracted_amount").isNull()) {
             result.setExtractedAmount(response.path("extracted_amount").asDouble());
         }
-        result.setAnalysisType(analysisType);
 
         double confidence = response.path("confidence").asDouble(0.0);
         boolean needsReview = response.path("needs_human_review").asBoolean(true);
@@ -298,8 +442,6 @@ public class AiAnalysisService {
         result.setNeedsHumanReview(needsReview);
         result.setStatus(status);
 
-        // If a new MISMATCH comes in after a previous review, re-open for review
-        // If a new VALIDATED comes in, clear any previous rejection so it doesn't stay in the queue
         if ("VALIDATED".equals(status)) {
             result.setNeedsHumanReview(false);
             result.setReviewerDecision(null);
@@ -307,13 +449,14 @@ public class AiAnalysisService {
             result.setReviewedAt(null);
             result.setReviewedBy(null);
         } else if ("MISMATCH".equals(status) || "NEEDS_REVIEW".equals(status)) {
-            // Re-open for review even if previously reviewed
             result.setNeedsHumanReview(true);
             result.setReviewerDecision(null);
             result.setReviewerNotes(null);
             result.setReviewedAt(null);
             result.setReviewedBy(null);
-        }        List<String> issueList = new ArrayList<>();
+        }
+
+        List<String> issueList = new ArrayList<>();
         JsonNode issues = response.path("issues");
         if (issues.isArray()) {
             issues.forEach(i -> {

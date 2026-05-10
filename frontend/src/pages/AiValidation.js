@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { aiApi, projectApi } from '../services/api';
+import { aiApi, projectApi, transactionApi } from '../services/api';
 
 const TYPE_LABELS = {
   THREE_WAY_MATCH:    { label: '3-Way Match',        icon: '🔗', color: '#2563eb' },
@@ -71,10 +71,27 @@ export default function AiValidation() {
       if (type === 'DUPLICATE_DETECTION') {
         res = await aiApi.duplicateDetection(selectedProject);
       } else if (type === 'BUDGET_VARIANCE') {
-        res = await aiApi.budgetVariance(selectedProject, {
-          categories: [],
-          alertThresholdPct: 10,
+        // Fetch transactions for the project and aggregate actual spend per category
+        const txRes = await transactionApi.getAll();
+        const projectTxs = txRes.data.filter(t => t.projectId === selectedProject);
+        const project = projects.find(p => p.id === selectedProject);
+        const budgetPerCategory = {};
+        if (project?.totalBudget && project?.categories) {
+          const cats = project.categories.split(',').filter(Boolean);
+          const perCat = cats.length > 0 ? project.totalBudget / cats.length : 0;
+          cats.forEach(c => { budgetPerCategory[c.trim()] = perCat; });
+        }
+        const actualByCategory = {};
+        projectTxs.forEach(t => {
+          const cat = t.categoryName || 'Uncategorized';
+          actualByCategory[cat] = (actualByCategory[cat] || 0) + (t.amount || 0);
         });
+        const categories = Object.keys({ ...budgetPerCategory, ...actualByCategory }).map(name => ({
+          name,
+          budgeted: budgetPerCategory[name] || 0,
+          actual: actualByCategory[name] || 0,
+        }));
+        res = await aiApi.budgetVariance(selectedProject, { categories, alertThresholdPct: 10 });
       }
       setRunResult({ type, data: res.data });
       fetchData();

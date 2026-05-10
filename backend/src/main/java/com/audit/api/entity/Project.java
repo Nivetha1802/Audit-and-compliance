@@ -5,7 +5,9 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 @Entity
-@Table(name = "projects")
+@Table(name = "projects", uniqueConstraints = {
+    @UniqueConstraint(columnNames = {"project_code", "organization_id"})
+})
 public class Project extends BaseEntity {
 
     @Id
@@ -15,7 +17,7 @@ public class Project extends BaseEntity {
     @Column(nullable = false)
     private String name;
 
-    @Column(name = "project_code", unique = true)
+    @Column(name = "project_code")
     private String projectCode;
 
     private String description;
@@ -56,10 +58,6 @@ public class Project extends BaseEntity {
     @Column(name = "signed_off_by")
     private UUID signedOffBy;
 
-    @Column(name = "signed_off_at")
-    private Double complianceScore = 0.0;
-    private String riskStatus; // COMPLIANT, AT_RISK, NEEDS_REVIEW
-
     private java.time.LocalDateTime signedOffAt;
 
     @Column(name = "sign_off_notes", columnDefinition = "TEXT")
@@ -67,6 +65,9 @@ public class Project extends BaseEntity {
 
     @Column(name = "is_locked")
     private boolean locked = false;
+
+    private Double complianceScore = 0.0;
+    private String riskStatus;
 
     public Project() {}
 

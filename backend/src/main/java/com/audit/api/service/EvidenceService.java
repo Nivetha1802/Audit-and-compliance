@@ -14,6 +14,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class EvidenceService {
@@ -27,6 +28,7 @@ public class EvidenceService {
     private final ChecklistItemTemplateRepository templateItemRepository;
     private final DocumentRepository documentRepository;
     private final TransactionRepository transactionRepository;
+    private final MasterCategoryRepository masterCategoryRepository;
     private final SecurityUtils securityUtils;
     private final BankValidationService bankValidationService;
 
@@ -37,6 +39,7 @@ public class EvidenceService {
                            ChecklistItemTemplateRepository templateItemRepository,
                            DocumentRepository documentRepository,
                            TransactionRepository transactionRepository,
+                           MasterCategoryRepository masterCategoryRepository,
                            SecurityUtils securityUtils,
                            BankValidationService bankValidationService) {
         this.checklistRepository = checklistRepository;
@@ -45,6 +48,7 @@ public class EvidenceService {
         this.templateItemRepository = templateItemRepository;
         this.documentRepository = documentRepository;
         this.transactionRepository = transactionRepository;
+        this.masterCategoryRepository = masterCategoryRepository;
         this.securityUtils = securityUtils;
         this.bankValidationService = bankValidationService;
     }
@@ -62,21 +66,15 @@ public class EvidenceService {
             checklist.setTransactionId(transactionId);
             checklist.setCompleted(false);
             checklist.setOrganizationId(orgId);
-            checklist = checklistRepository.save(checklist);
+            Checklist saved = checklistRepository.save(checklist);
 
-            // Seed items from matching template (by category name — supports comma-separated multi-category)
+            // Find best matching template using category hierarchy walk-up
             List<ChecklistTemplate> templates = templateRepository.findByOrganizationId(orgId);
-            ChecklistTemplate matched = templates.stream()
-                    .filter(t -> t.getDescription() != null && tx.getCategoryName() != null
-                            && java.util.Arrays.stream(t.getDescription().split(","))
-                                .map(String::trim)
-                                .anyMatch(cat -> cat.equalsIgnoreCase(tx.getCategoryName())))
-                    .findFirst()
-                    .orElse(templates.isEmpty() ? null : templates.get(0));
+            ChecklistTemplate matched = findBestTemplate(templates, tx.getCategoryName(), tx.getSubcategory(), orgId);
 
             if (matched != null) {
                 List<ChecklistItemTemplate> templateItems = templateItemRepository.findByTemplateId(matched.getId());
-                final UUID checklistId = checklist.getId();
+                final UUID checklistId = saved.getId();
                 templateItems.forEach(ti -> {
                     ChecklistItem item = new ChecklistItem();
                     item.setChecklistId(checklistId);
@@ -88,12 +86,77 @@ public class EvidenceService {
                 });
             }
 
-            return checklist;
+            return saved;
         });
+    }
+
+    /**
+     * Find the best matching template for a transaction's category.
+     * Priority: exact L3 match → L2 match → L1 match → first template.
+     * Supports comma-separated multi-category templates.
+     */
+    private ChecklistTemplate findBestTemplate(List<ChecklistTemplate> templates,
+                                                String categoryName, String subcategory, UUID orgId) {
+        if (templates.isEmpty()) return null;
+
+        // Build candidate names to try: L3 (subcategory), L2 (categoryName), then walk up
+        List<String> candidates = new java.util.ArrayList<>();
+        if (subcategory != null && !subcategory.isBlank()) candidates.add(subcategory.trim());
+        if (categoryName != null && !categoryName.isBlank()) candidates.add(categoryName.trim());
+
+        // Also add parent category names by looking up the master category tree
+        if (categoryName != null && !categoryName.isBlank()) {
+            List<com.audit.api.entity.MasterCategory> allCats =
+                    masterCategoryRepository.findByOrganizationId(orgId);
+            java.util.Map<UUID, com.audit.api.entity.MasterCategory> byId = new java.util.HashMap<>();
+            allCats.forEach(c -> byId.put(c.getId(), c));
+            java.util.Map<String, com.audit.api.entity.MasterCategory> byName = new java.util.HashMap<>();
+            allCats.forEach(c -> byName.put(c.getName().toLowerCase().trim(), c));
+
+            // Walk up from subcategory
+            com.audit.api.entity.MasterCategory current = byName.get(
+                    (subcategory != null ? subcategory : categoryName).toLowerCase().trim());
+            while (current != null && current.getParentId() != null) {
+                current = byId.get(current.getParentId());
+                if (current != null) candidates.add(current.getName());
+            }
+        }
+
+        // Try each candidate against template descriptions
+        for (String candidate : candidates) {
+            for (ChecklistTemplate t : templates) {
+                if (t.getDescription() == null) continue;
+                boolean matches = java.util.Arrays.stream(t.getDescription().split(","))
+                        .map(String::trim)
+                        .anyMatch(cat -> cat.equalsIgnoreCase(candidate));
+                if (matches) return t;
+            }
+        }
+
+        // Fall back to first template
+        return templates.get(0);
     }
 
     public List<ChecklistItem> getChecklistItems(UUID checklistId) {
         return checklistItemRepository.findByChecklistId(checklistId);
+    }
+
+    /** Get checklist items enriched with document filename */
+    public List<com.audit.api.dto.ChecklistItemResponse> getChecklistItemsWithDocNames(UUID checklistId) {
+        List<ChecklistItem> items = checklistItemRepository.findByChecklistId(checklistId);
+        return items.stream().map(item -> {
+            com.audit.api.dto.ChecklistItemResponse res = new com.audit.api.dto.ChecklistItemResponse();
+            res.setId(item.getId());
+            res.setDescription(item.getDescription());
+            res.setMandatory(item.isMandatory());
+            res.setProvided(item.isProvided());
+            res.setDocumentId(item.getDocumentId());
+            if (item.getDocumentId() != null) {
+                documentRepository.findById(item.getDocumentId())
+                        .ifPresent(doc -> res.setDocumentName(doc.getFileName()));
+            }
+            return res;
+        }).collect(Collectors.toList());
     }
 
     /** Upload evidence file and link it to a checklist item */

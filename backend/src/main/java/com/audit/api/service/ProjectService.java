@@ -1,6 +1,8 @@
 package com.audit.api.service;
 
+import com.audit.api.entity.MasterCategory;
 import com.audit.api.entity.Project;
+import com.audit.api.repository.MasterCategoryRepository;
 import com.audit.api.repository.ProjectRepository;
 import com.audit.api.util.SecurityUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -8,16 +10,21 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class ProjectService {
 
     private final ProjectRepository projectRepository;
+    private final MasterCategoryRepository masterCategoryRepository;
     private final SecurityUtils securityUtils;
 
     @Autowired
-    public ProjectService(ProjectRepository projectRepository, SecurityUtils securityUtils) {
+    public ProjectService(ProjectRepository projectRepository,
+                          MasterCategoryRepository masterCategoryRepository,
+                          SecurityUtils securityUtils) {
         this.projectRepository = projectRepository;
+        this.masterCategoryRepository = masterCategoryRepository;
         this.securityUtils = securityUtils;
     }
 
@@ -26,8 +33,20 @@ public class ProjectService {
     }
 
     public Project createProject(Project project) {
-        project.setOrganizationId(securityUtils.getCurrentOrganizationId());
+        UUID orgId = securityUtils.getCurrentOrganizationId();
+        project.setOrganizationId(orgId);
         project.setStatus("ACTIVE");
+
+        // Auto-populate categories from all L1 org categories
+        if (project.getCategories() == null || project.getCategories().isBlank()) {
+            String allCategories = masterCategoryRepository
+                    .findByOrganizationIdAndLevel(orgId, 1)
+                    .stream()
+                    .map(MasterCategory::getName)
+                    .collect(Collectors.joining(","));
+            project.setCategories(allCategories.isBlank() ? "All" : allCategories);
+        }
+
         return projectRepository.save(project);
     }
 
@@ -45,7 +64,6 @@ public class ProjectService {
         project.setStartDate(updates.getStartDate());
         project.setEndDate(updates.getEndDate());
         project.setTotalBudget(updates.getTotalBudget());
-        project.setCategories(updates.getCategories());
         project.setProjectOwnerId(updates.getProjectOwnerId());
         project.setAuditorId(updates.getAuditorId());
         if (updates.getStatus() != null) project.setStatus(updates.getStatus());

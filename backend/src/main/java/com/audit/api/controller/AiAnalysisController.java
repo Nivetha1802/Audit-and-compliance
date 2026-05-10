@@ -22,7 +22,13 @@ public class AiAnalysisController {
         this.aiAnalysisService = aiAnalysisService;
     }
 
-    /** Three-Way Match: PO vs Work Progress vs Invoice */
+    /** Three-Way Match from uploaded PO/GRN/Invoice documents in checklist */
+    @PostMapping("/three-way-match-docs/{transactionId}")
+    public ResponseEntity<AiAnalysisResult> threeWayMatchFromDocs(@PathVariable UUID transactionId) {
+        return ResponseEntity.ok(aiAnalysisService.runThreeWayMatchFromDocuments(transactionId));
+    }
+
+    /** Three-Way Match: PO vs Work Progress vs Invoice (manual amounts) */
     @PostMapping("/three-way-match/{transactionId}")
     public ResponseEntity<AiAnalysisResult> threeWayMatch(
             @PathVariable UUID transactionId,

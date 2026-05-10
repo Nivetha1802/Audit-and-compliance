@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { transactionApi, projectApi, evidenceApi } from '../services/api';
+import { transactionApi, projectApi, evidenceApi, aiApi } from '../services/api';
 import { 
   FiUploadCloud, FiCheckCircle, FiXCircle, FiPaperclip, 
   FiFileText, FiSearch, FiLayers, FiAlertCircle 
@@ -79,9 +79,9 @@ const Evidence = () => {
     try {
       // 1. Upload the document first to get an ID
       const uploadRes = await evidenceApi.uploadEvidence(itemId, formData);
-      const documentId = uploadRes.data.id; // Assuming backend returns the created document object/id
+      const documentId = uploadRes.data.id; 
 
-      // 2. Trigger AI Validation via backend (which will handle persistence & uniqueness)
+      // 2. Trigger AI Validation via backend
       const aiRes = await aiApi.validateEvidenceFile(selectedTx.id, documentId);
       const extractedAmount = aiRes.data.extractedAmount;
       
@@ -92,19 +92,16 @@ const Evidence = () => {
         extracted: extractedAmount,
         actual: selectedTx.amount,
         isMatch: isMatch,
-        itemName: checklistItems.find(i => i.id === itemId)?.name
+        itemName: checklistItems.find(i => i.id === itemId)?.description
       });
 
       if (!isMatch) {
-        const confirmUpload = window.confirm(
+        window.confirm(
           `AI detected an amount of ₹${extractedAmount.toLocaleString()} in the document, but the transaction amount is ₹${selectedTx.amount.toLocaleString()}. The amounts do not match. Keep this evidence?`
         );
-        // If they reject, we don't necessarily delete the doc here (it's already uploaded),
-        // but we show the mismatch.
       }
 
-      loadChecklist(selectedTx.id); // Refresh checklist to show the uploaded doc
-      loadChecklist(selectedTx.id); // Refresh checklist
+      loadChecklist(selectedTx.id); 
     } catch (err) {
       alert('Upload failed: ' + (err.response?.data?.message || err.message));
     } finally {
@@ -113,8 +110,8 @@ const Evidence = () => {
   };
 
   const filteredTransactions = transactions.filter(tx => 
-    tx.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    tx.vendorName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    tx.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    tx.vendorCustomer?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     tx.referenceNo?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -182,16 +179,34 @@ const Evidence = () => {
                     }`}
                   >
                     <div className="flex justify-between items-start mb-1">
-                      <span className="font-medium text-gray-900 text-sm truncate w-2/3">
-                        {tx.description}
-                      </span>
-                      <span className={`text-xs font-bold ${tx.type === 'Credit' ? 'text-green-600' : 'text-red-600'}`}>
-                        ₹{tx.amount.toLocaleString()}
-                      </span>
+                      <div className="flex flex-col">
+                        <span className="font-medium text-gray-900 text-sm truncate max-w-[180px]">
+                          {tx.description}
+                        </span>
+                        <div className="flex space-x-1 mt-1">
+                          {tx.isHighRisk && (
+                            <span className="px-1.5 py-0.5 bg-red-100 text-red-600 text-[10px] font-bold rounded">
+                              HIGH RISK
+                            </span>
+                          )}
+                          <span className={`px-1.5 py-0.5 text-[10px] font-bold rounded ${
+                            tx.complianceStatus === 'COMPLIANT' ? 'bg-green-100 text-green-600' : 
+                            tx.complianceStatus === 'FLAGGED' ? 'bg-amber-100 text-amber-600' : 'bg-gray-100 text-gray-600'
+                          }`}>
+                            {tx.complianceStatus || 'PENDING'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className={`text-xs font-bold ${tx.debitCredit === 'Credit' ? 'text-green-600' : 'text-red-600'}`}>
+                          ₹{tx.amount?.toLocaleString()}
+                        </p>
+                        <p className="text-[10px] text-gray-400">{tx.transactionDate}</p>
+                      </div>
                     </div>
-                    <div className="flex justify-between items-center text-xs text-gray-500">
-                      <span>{tx.vendorName || 'General'}</span>
-                      <span>{tx.date}</span>
+                    <div className="flex justify-between items-center text-xs text-gray-500 mt-2">
+                      <span className="truncate max-w-[100px]">{tx.vendorCustomer || 'Internal'}</span>
+                      <span className="text-[10px] italic">Ref: {tx.referenceNo || 'N/A'}</span>
                     </div>
                   </div>
                 ))
@@ -242,13 +257,18 @@ const Evidence = () => {
                     <h2 className="text-xl font-bold text-gray-900">{selectedTx.description}</h2>
                     <p className="text-sm text-gray-500">Ref: {selectedTx.referenceNo} | Ledger: {selectedTx.ledgerName}</p>
                   </div>
-                  <div className="text-right">
+                  <div className="flex flex-col items-end space-y-2">
                     <span className={`px-3 py-1 rounded-full text-xs font-bold ${
                       selectedTx.status === 'Approved' ? 'bg-green-100 text-green-700' : 
                       selectedTx.status === 'Finding Raised' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'
                     }`}>
                       {selectedTx.status}
                     </span>
+                    {selectedTx.bankMatched && (
+                      <span className="flex items-center text-[10px] text-green-600 font-bold bg-green-50 px-2 py-0.5 rounded">
+                        <FiCheckCircle className="mr-1" /> BANK MATCHED
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -259,7 +279,7 @@ const Evidence = () => {
                   </div>
                   <div>
                     <p className="text-[10px] uppercase text-gray-400 font-semibold mb-1">Category</p>
-                    <p className="text-sm font-medium">{selectedTx.category}</p>
+                    <p className="text-sm font-medium">{selectedTx.categoryName}</p>
                   </div>
                   <div>
                     <p className="text-[10px] uppercase text-gray-400 font-semibold mb-1">Subcategory</p>
@@ -267,9 +287,36 @@ const Evidence = () => {
                   </div>
                   <div>
                     <p className="text-[10px] uppercase text-gray-400 font-semibold mb-1">Vendor</p>
-                    <p className="text-sm font-medium">{selectedTx.vendorName}</p>
+                    <p className="text-sm font-medium">{selectedTx.vendorCustomer}</p>
                   </div>
                 </div>
+
+                {(selectedTx.validationReason || selectedTx.poNumber) && (
+                  <div className="mt-4 p-3 bg-gray-50 rounded-lg border border-gray-100">
+                    <div className="flex items-start mb-3">
+                      <FiAlertCircle className="text-indigo-500 mt-0.5 mr-2" />
+                      <div>
+                        <p className="text-xs font-bold text-indigo-900">Audit Intelligence</p>
+                        <p className="text-xs text-indigo-700">{selectedTx.validationReason || 'Standard transaction matching rules applied.'}</p>
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-gray-200">
+                      <div>
+                        <p className="text-[9px] text-gray-400 uppercase">PO Number</p>
+                        <p className="text-[11px] font-bold">{selectedTx.poNumber || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] text-gray-400 uppercase">GRN Number</p>
+                        <p className="text-[11px] font-bold">{selectedTx.grnNumber || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] text-gray-400 uppercase">Invoice No</p>
+                        <p className="text-[11px] font-bold">{selectedTx.invoiceNumber || 'N/A'}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="bg-white rounded-xl shadow-sm border border-gray-100">
@@ -290,23 +337,23 @@ const Evidence = () => {
                     checklistItems.map(item => (
                       <div key={item.id} className="p-4 flex items-center justify-between hover:bg-gray-50">
                         <div className="flex items-center space-x-3 overflow-hidden">
-                          {item.completed ? (
+                          {item.provided ? (
                             <FiCheckCircle className="text-green-500 flex-shrink-0" />
-                          ) : item.required ? (
+                          ) : item.mandatory ? (
                             <FiAlertCircle className="text-amber-500 flex-shrink-0" />
                           ) : (
                             <div className="w-5 h-5 rounded-full border-2 border-gray-200 flex-shrink-0" />
                           )}
                           <div className="truncate">
-                            <p className="text-sm font-medium text-gray-800">{item.name}</p>
+                            <p className="text-sm font-medium text-gray-800">{item.description}</p>
                             <p className="text-xs text-gray-400">
-                              {item.type} {item.required && <span className="text-red-400 font-bold ml-1">*Required</span>}
+                              {item.mandatory && <span className="text-red-400 font-bold ml-1">*Required</span>}
                             </p>
                           </div>
                         </div>
 
                         <div className="flex items-center space-x-2">
-                          {item.completed ? (
+                          {item.provided ? (
                             <div className="flex items-center bg-green-50 px-3 py-1.5 rounded-lg border border-green-100">
                               <FiFileText className="text-green-600 mr-2 text-xs" />
                               <span className="text-[10px] font-medium text-green-700 max-w-[100px] truncate">
@@ -316,11 +363,11 @@ const Evidence = () => {
                           ) : null}
 
                           <label className={`cursor-pointer flex items-center px-3 py-1.5 rounded-lg transition-colors ${
-                            item.completed ? 'bg-gray-100 text-gray-500 hover:bg-gray-200' : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm'
+                            item.provided ? 'bg-gray-100 text-gray-500 hover:bg-gray-200' : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm'
                           }`}>
                             <FiUploadCloud className="mr-2 text-sm" />
                             <span className="text-xs font-medium">
-                              {uploading === item.id ? '...' : item.completed ? 'Replace' : 'Upload'}
+                              {uploading === item.id ? '...' : item.provided ? 'Replace' : 'Upload'}
                             </span>
                             <input 
                               type="file" 

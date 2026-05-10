@@ -67,7 +67,7 @@ public class TransactionController {
     @PatchMapping("/{id}/link-vendor")
     public ResponseEntity<Transaction> linkVendor(
             @PathVariable UUID id,
-            @RequestParam UUID vendorId) {
+            @RequestParam(required = false) UUID vendorId) {
         return ResponseEntity.ok(transactionService.linkVendor(id, vendorId));
     }
 }

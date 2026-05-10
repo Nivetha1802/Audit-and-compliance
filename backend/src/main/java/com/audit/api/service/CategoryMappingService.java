@@ -34,57 +34,102 @@ public class CategoryMappingService {
         List<MasterCategory> all = masterCategoryRepository.findByOrganizationId(orgId);
         if (all.isEmpty()) return;
 
+        List<MasterCategory> l3 = all.stream().filter(c -> c.getLevel() == 3).toList();
         List<MasterCategory> l2 = all.stream().filter(c -> c.getLevel() == 2).toList();
         List<MasterCategory> l1 = all.stream().filter(c -> c.getLevel() == 1).toList();
 
+        // If the CSV already provided both categoryName and subcategory, just resolve the categoryId
+        // and don't overwrite the human-provided values
+        boolean hasCategory   = tx.getCategoryName() != null && !tx.getCategoryName().isBlank();
+        boolean hasSubcategory = tx.getSubcategory() != null && !tx.getSubcategory().isBlank();
+
+        if (hasCategory && hasSubcategory) {
+            // Try to resolve categoryId from the existing subcategory value
+            resolveIdOnly(tx, l1, l2, l3);
+            return;
+        }
+
         String haystack = buildHaystack(tx);
 
-        // 1. Exact L2 match
+        // 1. Exact L3 match → categoryName = L1, subcategory = L3
+        for (MasterCategory cat : l3) {
+            if (matches(haystack, cat.getName())) {
+                MasterCategory parent = l2.stream().filter(c -> c.getId().equals(cat.getParentId())).findFirst().orElse(null);
+                tx.setCategoryId(cat.getId());
+                tx.setCategoryName(parent != null ? getL1Name(l1, parent.getParentId()) : null);
+                if (!hasSubcategory) tx.setSubcategory(cat.getName());
+                return;
+            }
+        }
+
+        // 2. Exact L2 match → categoryName = L1, subcategory = L2
         for (MasterCategory cat : l2) {
             if (matches(haystack, cat.getName())) {
                 tx.setCategoryId(cat.getId());
                 tx.setCategoryName(getL1Name(l1, cat.getParentId()));
-                tx.setSubcategory(cat.getName());
+                if (!hasSubcategory) tx.setSubcategory(cat.getName());
                 return;
             }
         }
 
-        // 2. Exact L1 match
+        // 3. Exact L1 match → categoryName = L1, subcategory unchanged
         for (MasterCategory cat : l1) {
             if (matches(haystack, cat.getName())) {
                 tx.setCategoryId(cat.getId());
                 tx.setCategoryName(cat.getName());
-                tx.setSubcategory(null);
                 return;
             }
         }
 
-        // 3. Keyword L2 match (description contains category keyword)
+        // 4. Keyword match in description against L2
         String desc = tx.getDescription() != null ? tx.getDescription().toLowerCase() : "";
         for (MasterCategory cat : l2) {
             String keyword = cat.getName().toLowerCase().replaceAll("[^a-z0-9 ]", "");
             if (!keyword.isBlank() && desc.contains(keyword)) {
                 tx.setCategoryId(cat.getId());
                 tx.setCategoryName(getL1Name(l1, cat.getParentId()));
-                tx.setSubcategory(cat.getName());
+                if (!hasSubcategory) tx.setSubcategory(cat.getName());
                 return;
             }
         }
 
-        // 4. Keyword L1 match
+        // 5. Keyword match in description against L1
         for (MasterCategory cat : l1) {
             String keyword = cat.getName().toLowerCase().replaceAll("[^a-z0-9 ]", "");
             if (!keyword.isBlank() && desc.contains(keyword)) {
                 tx.setCategoryId(cat.getId());
                 tx.setCategoryName(cat.getName());
-                tx.setSubcategory(null);
                 return;
             }
         }
 
-        // 5. No match
-        if (tx.getCategoryName() == null || tx.getCategoryName().isBlank()) {
+        // 6. No match
+        if (!hasCategory) {
             tx.setCategoryName("Uncategorized");
+        }
+    }
+
+    /** Only resolve categoryId without changing categoryName or subcategory */
+    private void resolveIdOnly(Transaction tx, List<MasterCategory> l1,
+                                List<MasterCategory> l2, List<MasterCategory> l3) {
+        String sub = tx.getSubcategory().toLowerCase();
+        // Try L3 first
+        for (MasterCategory cat : l3) {
+            if (cat.getName().equalsIgnoreCase(tx.getSubcategory())) {
+                tx.setCategoryId(cat.getId()); return;
+            }
+        }
+        // Try L2
+        for (MasterCategory cat : l2) {
+            if (cat.getName().equalsIgnoreCase(tx.getSubcategory())) {
+                tx.setCategoryId(cat.getId()); return;
+            }
+        }
+        // Try L1 via categoryName
+        for (MasterCategory cat : l1) {
+            if (cat.getName().equalsIgnoreCase(tx.getCategoryName())) {
+                tx.setCategoryId(cat.getId()); return;
+            }
         }
     }
 

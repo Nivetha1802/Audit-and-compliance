@@ -154,8 +154,121 @@ def validate_evidence():
 
 # ── Other endpoints ───────────────────────────────────────────────────────────
 
-@app.route('/three-way-match', methods=['POST'])
-def three_way_match():
+@app.route('/extract-document', methods=['POST'])
+def extract_document():
+    """
+    Extract structured data from a document (PO, GRN, or Invoice).
+    Accepts multipart/form-data with 'file' and optional 'doc_type' hint.
+    Returns: { amount, vendor, date, doc_number, doc_type, currency, confidence }
+    """
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+
+    file = request.files['file']
+    doc_type_hint = request.form.get('doc_type', '')
+    content_type = file.content_type or 'application/octet-stream'
+    file_bytes = file.read()
+
+    if not GEMINI_API_KEY:
+        return jsonify({'error': 'GEMINI_API_KEY not set'}), 500
+
+    model = genai.GenerativeModel('gemini-2.5-flash')
+    suffix = '.pdf' if 'pdf' in content_type else '.jpg'
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(file_bytes)
+        tmp_path = tmp.name
+
+    try:
+        uploaded = genai.upload_file(path=tmp_path, mime_type=content_type)
+        prompt = (
+            f"Analyze this {'Purchase Order' if 'po' in doc_type_hint.lower() else 'GRN' if 'grn' in doc_type_hint.lower() else 'Invoice' if 'invoice' in doc_type_hint.lower() else 'financial document'} carefully. "
+            "Extract the following fields and return ONLY a valid JSON object with these exact keys: "
+            "'amount' (number — the total/grand total payable amount including taxes, no currency symbol), "
+            "'vendor' (string — vendor/supplier name), "
+            "'date' (string — document date in YYYY-MM-DD format if possible), "
+            "'doc_number' (string — PO number, GRN number, or Invoice number), "
+            "'doc_type' (string — one of: PO, GRN, INVOICE), "
+            "'currency' (string — e.g. INR). "
+            "If a field cannot be found, use null. Return only the raw JSON object, no markdown."
+        )
+        response = model.generate_content([uploaded, prompt])
+        raw = response.text.strip()
+        print(f"[DEBUG] extract_document Gemini response: {raw!r}", flush=True)
+        clean = re.sub(r'^```(?:json)?\s*|\s*```$', '', raw, flags=re.MULTILINE).strip()
+        result = json.loads(clean)
+        result['confidence'] = 0.95
+        return jsonify(result)
+    except Exception as e:
+        print(f"[DEBUG] extract_document failed: {e}", flush=True)
+        return jsonify({'error': str(e), 'amount': None, 'vendor': None, 'doc_number': None, 'doc_type': doc_type_hint, 'confidence': 0.0}), 200
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+
+
+@app.route('/three-way-match-from-docs', methods=['POST'])
+def three_way_match_from_docs():
+    """
+    Accepts extracted data from PO, GRN, and Invoice documents and runs three-way match.
+    Body: { po: {amount, vendor, doc_number}, grn: {amount, vendor, doc_number}, invoice: {amount, vendor, doc_number}, transaction_amount: number }
+    """
+    body = request.get_json(force=True, silent=True) or {}
+    po = body.get('po') or {}
+    grn = body.get('grn') or {}
+    invoice = body.get('invoice') or {}
+    tx_amount = float(body.get('transaction_amount') or 0)
+
+    po_amount  = float(po.get('amount') or 0)
+    grn_amount = float(grn.get('amount') or 0)
+    inv_amount = float(invoice.get('amount') or 0)
+    po_vendor  = po.get('vendor') or ''
+    inv_vendor = invoice.get('vendor') or ''
+
+    issues = []
+    matched_docs = []
+
+    if po_amount and inv_amount:
+        if amounts_match(inv_amount, po_amount, 2.0):
+            matched_docs.append('PO ↔ Invoice ✓')
+        else:
+            issues.append(f'Invoice ₹{inv_amount:,.2f} does not match PO ₹{po_amount:,.2f}')
+
+    if grn_amount and inv_amount:
+        if amounts_match(inv_amount, grn_amount, 2.0):
+            matched_docs.append('GRN ↔ Invoice ✓')
+        else:
+            issues.append(f'Invoice ₹{inv_amount:,.2f} does not match GRN ₹{grn_amount:,.2f}')
+
+    if po_amount and grn_amount:
+        if amounts_match(grn_amount, po_amount, 2.0):
+            matched_docs.append('PO ↔ GRN ✓')
+        else:
+            issues.append(f'GRN ₹{grn_amount:,.2f} does not match PO ₹{po_amount:,.2f}')
+
+    if po_vendor and inv_vendor and po_vendor.lower() != inv_vendor.lower():
+        issues.append(f'Vendor mismatch: PO "{po_vendor}" vs Invoice "{inv_vendor}"')
+
+    if tx_amount and inv_amount and not amounts_match(inv_amount, tx_amount, 1.0):
+        issues.append(f'Invoice ₹{inv_amount:,.2f} does not match ledger transaction ₹{tx_amount:,.2f}')
+
+    status = 'VALIDATED' if not issues else 'MISMATCH'
+    return jsonify({
+        'result': status,
+        'confidence': 0.95 if not issues else 0.88,
+        'needs_human_review': bool(issues),
+        'issues': issues,
+        'matched': matched_docs,
+        'extracted': {
+            'po_amount': po_amount,
+            'grn_amount': grn_amount,
+            'invoice_amount': inv_amount,
+            'po_vendor': po_vendor,
+            'invoice_vendor': inv_vendor,
+        }
+    })
     body = request.get_json(force=True, silent=True) or {}
     po_amount  = float(body.get('po_amount') or 0)
     wp_amount  = float(body.get('work_progress_amount') or 0)
