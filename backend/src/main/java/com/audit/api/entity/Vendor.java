@@ -31,7 +31,16 @@ public class Vendor extends BaseEntity {
     private String contactDetails;
 
     private Boolean isNew = true;
+    private String legalName;
+    private String tradeName;
+    private String gstStatus;
+    private String registrationDate;
+    private String verifiedAddress;
+    private Boolean isGstVerified = false;
     private String riskLevel = "LOW";
+    
+    private double identityMatchScore;
+    private String identityStatus;
 
     public Vendor() {}
 
@@ -57,4 +66,21 @@ public class Vendor extends BaseEntity {
     public void setIsNew(Boolean isNew) { this.isNew = isNew; }
     public String getRiskLevel() { return riskLevel; }
     public void setRiskLevel(String riskLevel) { this.riskLevel = riskLevel; }
+    public String getLegalName() { return legalName; }
+    public void setLegalName(String legalName) { this.legalName = legalName; }
+    public String getTradeName() { return tradeName; }
+    public void setTradeName(String tradeName) { this.tradeName = tradeName; }
+    public String getGstStatus() { return gstStatus; }
+    public void setGstStatus(String gstStatus) { this.gstStatus = gstStatus; }
+    public String getRegistrationDate() { return registrationDate; }
+    public void setRegistrationDate(String registrationDate) { this.registrationDate = registrationDate; }
+    public String getVerifiedAddress() { return verifiedAddress; }
+    public void setVerifiedAddress(String verifiedAddress) { this.verifiedAddress = verifiedAddress; }
+    public Boolean getIsGstVerified() { return isGstVerified; }
+    public void setIsGstVerified(Boolean isGstVerified) { this.isGstVerified = isGstVerified; }
+
+    public double getIdentityMatchScore() { return identityMatchScore; }
+    public void setIdentityMatchScore(double identityMatchScore) { this.identityMatchScore = identityMatchScore; }
+    public String getIdentityStatus() { return identityStatus; }
+    public void setIdentityStatus(String identityStatus) { this.identityStatus = identityStatus; }
 }

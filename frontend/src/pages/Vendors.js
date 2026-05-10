@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { vendorsApi, masterCategoriesApi } from '../services/api';
+import { FiCheckCircle, FiShield, FiAlertTriangle } from 'react-icons/fi';
 import { FiPlus, FiTrash2, FiEdit2, FiEye, FiUser, FiCreditCard, FiPhone, FiX } from 'react-icons/fi';
 
 // Build grouped options: optgroup = "L1 › L2", options = L3 names only.
@@ -124,6 +125,7 @@ function VendorDrawer({ vendor, categoryGroups, onClose, onSaved, onDeleted }) {
     const [mode, setMode] = useState('view'); // 'view' | 'edit'
     const [formData, setFormData] = useState({ ...vendor });
     const [saving, setSaving] = useState(false);
+    const [verifying, setVerifying] = useState(false);
 
     const handleSave = async (e) => {
         e.preventDefault();
@@ -148,6 +150,19 @@ function VendorDrawer({ vendor, categoryGroups, onClose, onSaved, onDeleted }) {
         }
     };
 
+    const handleVerifyGst = async () => {
+        if (!vendor.gstNumber) return;
+        setVerifying(true);
+        try {
+            await vendorsApi.verifyGst(vendor.id);
+            onSaved();
+        } catch (err) {
+            alert('GST Verification failed: ' + (err.response?.data?.message || err.message));
+        } finally {
+            setVerifying(false);
+        }
+    };
+
     const DetailRow = ({ label, value }) => (
         <div className="py-3 border-b border-gray-50 last:border-0">
             <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-0.5">{label}</div>
@@ -169,6 +184,11 @@ function VendorDrawer({ vendor, categoryGroups, onClose, onSaved, onDeleted }) {
                         <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${TYPE_STYLES[vendor.vendorType] || 'bg-gray-100 text-gray-600'}`}>
                             {vendor.vendorType}
                         </span>
+                        {vendor.isGstVerified && (
+                        <span className="text-[10px] font-bold text-green-600 bg-green-50 px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                            <FiCheckCircle size={10} /> GST VERIFIED
+                        </span>
+                    )}
                     </div>
                     <h2 className="text-lg font-bold text-gray-900">{vendor.name}</h2>
                     <p className="text-xs text-gray-500 mt-0.5">{vendor.category}</p>
@@ -194,6 +214,56 @@ function VendorDrawer({ vendor, categoryGroups, onClose, onSaved, onDeleted }) {
             <div className="flex-1 overflow-y-auto p-5">
                 {mode === 'view' ? (
                     <div>
+                        <div className="bg-gray-50 rounded-lg p-4 mb-4">
+                           <div className="flex items-center justify-between mb-3">
+                               <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Compliance Check</h3>
+                               {vendor.gstNumber ? (
+                                   <button 
+                                       onClick={handleVerifyGst}
+                                       disabled={verifying}
+                                       className={`text-xs font-bold px-3 py-1.5 rounded-md transition-all flex items-center gap-1.5 ${
+                                           vendor.isGstVerified 
+                                           ? 'bg-green-600 text-white cursor-default'
+                                           : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm'
+                                       }`}
+                                   >
+                                       {verifying ? 'Verifying...' : vendor.isGstVerified ? <><FiCheckCircle /> Verified</> : 'Verify GSTIN'}
+                                   </button>
+                               ) : (
+                                   <span className="text-xs text-orange-500 font-medium flex items-center gap-1">
+                                       <FiAlertTriangle /> No GSTIN provided
+                                   </span>
+                               )}
+                           </div>
+
+                           {vendor.isGstVerified ? (
+                               <div className="space-y-3">
+                                   <div>
+                                       <div className="text-[10px] font-bold text-gray-400 uppercase">Legal Name</div>
+                                       <div className="text-sm font-semibold text-gray-800">{vendor.legalName}</div>
+                                   </div>
+                                   <div className="grid grid-cols-2 gap-3">
+                                       <div>
+                                           <div className="text-[10px] font-bold text-gray-400 uppercase">Status</div>
+                                           <div className="text-xs font-bold text-green-600">{vendor.gstStatus}</div>
+                                       </div>
+                                       <div>
+                                           <div className="text-[10px] font-bold text-gray-400 uppercase">Reg. Date</div>
+                                           <div className="text-xs font-medium text-gray-700">{vendor.registrationDate}</div>
+                                       </div>
+                                   </div>
+                                   <div>
+                                       <div className="text-[10px] font-bold text-gray-400 uppercase">Verified Address</div>
+                                       <div className="text-xs text-gray-600 leading-relaxed">{vendor.verifiedAddress}</div>
+                                   </div>
+                               </div>
+                           ) : (
+                               <div className="text-xs text-gray-500 italic">
+                                   Click verify to fetch official registration details from the GST portal.
+                               </div>
+                           )}
+                        </div>
+
                         <DetailRow label="Vendor ID" value={vendor.customVendorId} />
                         <DetailRow label="Vendor Name" value={vendor.name} />
                         <DetailRow label="Type" value={vendor.vendorType} />

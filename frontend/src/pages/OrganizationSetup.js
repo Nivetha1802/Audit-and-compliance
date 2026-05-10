@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { organizationApi, userApi, masterCategoriesApi, maintenanceApi } from '../services/api';
+import { organizationApi, userApi, masterCategoriesApi } from '../services/api';
 
 const DEFAULT_TREE = [
   {
@@ -66,7 +66,6 @@ export default function OrganizationSetup() {
   const [newL3, setNewL3]   = useState({});
   const [editState, setEditState] = useState({ type: null, l1Idx: null, l2Idx: null, l3Idx: null, value: '' });
 
-  // ── Load data ──────────────────────────────────────────────────────────────
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -154,21 +153,6 @@ export default function OrganizationSetup() {
 
   const startEdit = (type, l1Idx, l2Idx = null, l3Idx = null, value = '') =>
     setEditState({ type, l1Idx, l2Idx, l3Idx, value });
-
-    const handleSeedData = async () => {
-        if (!window.confirm("This will seed default Categories, Vendors, and Checklists. Continue?")) return;
-        setLoading(true);
-        try {
-            await maintenanceApi.seedMasterData();
-            alert("Master data seeded successfully! Please refresh the page.");
-            window.location.reload();
-        } catch (err) {
-            console.error("Seeding failed:", err);
-            alert("Failed to seed data.");
-        } finally {
-            setLoading(false);
-        }
-    };
   const cancelEdit = () => setEditState({ type: null, l1Idx: null, l2Idx: null, l3Idx: null, value: '' });
 
   const saveEdit = () => {
@@ -201,13 +185,13 @@ export default function OrganizationSetup() {
     e.preventDefault();
     setMessage({ type: '', text: '' });
 
-    // Warn if the tree has no L3 items — saving would wipe existing L3 categories
+    // Warn if the tree has no L3 items
     const l3Count = tree.reduce((acc, l1) =>
       acc + (l1.children || []).reduce((a, l2) => a + (l2.children || []).length, 0), 0);
     if (l3Count === 0) {
       const confirmed = window.confirm(
-        'Warning: Your category tree has no Level 3 items (line items like Cement, Steel, etc.).\n\n' +
-        'Saving now will permanently delete any existing Level 3 categories from the database.\n\n' +
+        'Warning: Your category tree has no Level 3 items.\n\n' +
+        'Saving now will permanently delete any existing Level 3 categories.\n\n' +
         'Are you sure you want to continue?'
       );
       if (!confirmed) return;
@@ -229,14 +213,6 @@ export default function OrganizationSetup() {
     }
   };
 
-                    <button 
-                        type="button"
-                        onClick={handleSeedData}
-                        className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition disabled:opacity-50"
-                        disabled={loading}
-                    >
-                        {loading ? 'Seeding...' : 'Seed Default Master Data'}
-                    </button>
   // ── Styles ─────────────────────────────────────────────────────────────────
   const inputStyle = {
     width: '100%', padding: '0.6rem 0.8rem', border: '1px solid #d1d5db',
@@ -309,7 +285,6 @@ export default function OrganizationSetup() {
             Configure 3 levels: Root Group → Sub-category → Line Item.
           </p>
 
-          {/* Add L1 */}
           <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '2rem' }}>
             <input type="text" value={newL1} onChange={(e) => setNewL1(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addL1())}
@@ -323,7 +298,6 @@ export default function OrganizationSetup() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             {tree.map((l1, l1Idx) => (
               <div key={l1Idx} style={{ border: '1px solid #e5e7eb', borderRadius: '0.75rem', overflow: 'hidden' }}>
-                {/* L1 header */}
                 <div style={{ padding: '0.75rem 1.25rem', backgroundColor: '#1e3a8a', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   {editState.type === 'L1' && editState.l1Idx === l1Idx ? (
                     <div style={{ display: 'flex', gap: '0.5rem', flex: 1 }}>
@@ -337,24 +311,18 @@ export default function OrganizationSetup() {
                       <span style={{ fontWeight: '700', letterSpacing: '0.025em' }}>LEVEL 1: {l1.name}</span>
                       <div style={{ display: 'flex', gap: '0.5rem' }}>
                         <button type="button" onClick={() => startEdit('L1', l1Idx, null, null, l1.name)}
-                          style={{ backgroundColor: 'rgba(255,255,255,0.15)', border: 'none', color: 'white', cursor: 'pointer', padding: '0.25rem 0.75rem', borderRadius: '0.25rem', fontSize: '0.75rem' }}>
-                          Edit
-                        </button>
+                          style={{ backgroundColor: 'rgba(255,255,255,0.15)', border: 'none', color: 'white', cursor: 'pointer', padding: '0.25rem 0.75rem', borderRadius: '0.25rem', fontSize: '0.75rem' }}>Edit</button>
                         <button type="button" onClick={() => removeL1(l1Idx)}
-                          style={{ backgroundColor: 'rgba(255,255,255,0.15)', border: 'none', color: 'white', cursor: 'pointer', padding: '0.25rem 0.75rem', borderRadius: '0.25rem', fontSize: '0.75rem' }}>
-                          Delete
-                        </button>
+                          style={{ backgroundColor: 'rgba(255,255,255,0.15)', border: 'none', color: 'white', cursor: 'pointer', padding: '0.25rem 0.75rem', borderRadius: '0.25rem', fontSize: '0.75rem' }}>Delete</button>
                       </div>
                     </>
                   )}
                 </div>
 
-                {/* L2 children */}
                 <div style={{ padding: '1.25rem', backgroundColor: '#fcfcfc' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                     {l1.children?.map((l2, l2Idx) => (
                       <div key={l2Idx} style={{ backgroundColor: 'white', padding: '1rem', borderRadius: '0.5rem', border: '1px solid #f3f4f6', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
-                        {/* L2 header */}
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
                           {editState.type === 'L2' && editState.l1Idx === l1Idx && editState.l2Idx === l2Idx ? (
                             <div style={{ display: 'flex', gap: '0.5rem', flex: 1 }}>
@@ -376,7 +344,6 @@ export default function OrganizationSetup() {
                           )}
                         </div>
 
-                        {/* L3 chips */}
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.75rem' }}>
                           {l2.children?.map((l3, l3Idx) => (
                             <span key={l3Idx} style={{ backgroundColor: '#f3f4f6', color: '#1f2937', padding: '0.25rem 0.6rem', borderRadius: '9999px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.35rem', border: '1px solid #e5e7eb' }}>
@@ -398,7 +365,6 @@ export default function OrganizationSetup() {
                           ))}
                         </div>
 
-                        {/* Add L3 */}
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
                           <input
                             placeholder="Add line item (Level 3)"
@@ -415,7 +381,6 @@ export default function OrganizationSetup() {
                       </div>
                     ))}
 
-                    {/* Add L2 */}
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
                       <input
                         placeholder={`New sub-category under ${l1.name}`}
