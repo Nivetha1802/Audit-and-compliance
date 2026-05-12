@@ -45,7 +45,11 @@ public class ChecklistTemplateController {
 
         ChecklistTemplate template = new ChecklistTemplate();
         template.setName(request.getName());
-        template.setDescription(request.getCategory());
+        // Normalise: always store categories as a comma-separated description
+        String categories = (request.getCategories() != null && !request.getCategories().isEmpty())
+                ? String.join(",", request.getCategories())
+                : (request.getCategory() != null ? request.getCategory() : "");
+        template.setDescription(categories);
         template.setOrganizationId(orgId);
         ChecklistTemplate saved = templateRepository.save(template);
 
@@ -62,7 +66,11 @@ public class ChecklistTemplateController {
                 .orElseThrow(() -> new RuntimeException("Template not found"));
 
         template.setName(request.getName());
-        template.setDescription(String.join(",", request.getCategories()));
+        // Guard against null categories list to prevent NullPointerException
+        String updatedCategories = (request.getCategories() != null && !request.getCategories().isEmpty())
+                ? String.join(",", request.getCategories())
+                : (template.getDescription() != null ? template.getDescription() : "");
+        template.setDescription(updatedCategories);
         ChecklistTemplate saved = templateRepository.save(template);
 
         // Replace items

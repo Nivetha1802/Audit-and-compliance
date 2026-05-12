@@ -28,6 +28,8 @@ public class AiAnalysisService {
     @Value("${ai.service.url:http://localhost:5000}")
     private String aiServiceUrl;
 
+    private final ProjectRepository projectRepository;
+    private final FindingRepository findingRepository;
     private final AiAnalysisResultRepository resultRepository;
     private final TransactionRepository transactionRepository;
     private final DocumentRepository documentRepository;
@@ -43,12 +45,16 @@ public class AiAnalysisService {
                               DocumentRepository documentRepository,
                               ChecklistRepository checklistRepository,
                               ChecklistItemRepository checklistItemRepository,
+                              ProjectRepository projectRepository,
+                              FindingRepository findingRepository,
                               SecurityUtils securityUtils) {
         this.resultRepository = resultRepository;
         this.transactionRepository = transactionRepository;
         this.documentRepository = documentRepository;
         this.checklistRepository = checklistRepository;
         this.checklistItemRepository = checklistItemRepository;
+        this.projectRepository = projectRepository;
+        this.findingRepository = findingRepository;
         this.securityUtils = securityUtils;
     }
 
@@ -386,6 +392,107 @@ public class AiAnalysisService {
 
     public List<AiAnalysisResult> getResultsByTransaction(UUID transactionId) {
         return resultRepository.findByTransactionId(transactionId);
+    }
+
+    // ── Gemini Audit Insights ────────────────────────────────────────────────
+
+    public Map<String, Object> generateAuditInsights(UUID projectId) {
+        UUID orgId = securityUtils.getCurrentOrganizationId();
+
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new RuntimeException("Project not found"));
+
+        List<Transaction> transactions = transactionRepository.findByOrganizationIdAndProjectId(orgId, projectId);
+        List<Finding> allFindings = findingRepository.findByOrganizationId(orgId);
+        List<Finding> findings = allFindings.stream()
+                .filter(f -> transactions.stream().anyMatch(t -> t.getId().equals(f.getTransactionId())))
+                .toList();
+
+        long total    = transactions.size();
+        long approved = transactions.stream().filter(t -> "APPROVED".equals(t.getStatus())).count();
+        long pending  = transactions.stream().filter(t -> "PENDING_EVIDENCE".equals(t.getStatus())).count();
+        long openFindings    = findings.stream().filter(f -> !"CLOSED".equals(f.getStatus())).count();
+        long criticalFindings = findings.stream().filter(f -> "CRITICAL".equals(f.getSeverity()) && !"CLOSED".equals(f.getStatus())).count();
+        long highFindings    = findings.stream().filter(f -> "HIGH".equals(f.getSeverity()) && !"CLOSED".equals(f.getStatus())).count();
+        int  compliancePct   = total == 0 ? 0 : (int) Math.round((approved * 100.0) / total);
+
+        // Build context for Gemini
+        String prompt = String.format(
+            "You are a senior audit compliance expert analyzing a real estate project audit.\n" +
+            "Project: %s (Code: %s)\n" +
+            "Audit Status: %s | Compliance Score: %d%%\n" +
+            "Transactions: %d total, %d approved, %d pending evidence\n" +
+            "Findings: %d open (%d critical, %d high)\n" +
+            "Budget: %s | Period: %s to %s\n\n" +
+            "Provide a concise, actionable audit analysis with these exact JSON keys:\n" +
+            "{\"summary\": \"2-3 sentence executive summary\"," +
+            "\"strengths\": [\"point1\", \"point2\"]," +
+            "\"improvements\": [\"improvement1\", \"improvement2\", \"improvement3\"]," +
+            "\"risks\": [\"risk1\", \"risk2\"]," +
+            "\"recommendations\": [\"recommendation1\", \"recommendation2\", \"recommendation3\"]}\n" +
+            "Return only valid JSON, no markdown, no explanation.",
+            project.getName(),
+            project.getProjectCode() != null ? project.getProjectCode() : "N/A",
+            project.getAuditStatus() != null ? project.getAuditStatus() : "DRAFT",
+            compliancePct,
+            total, approved, pending,
+            openFindings, criticalFindings, highFindings,
+            project.getTotalBudget() != null ? "₹" + project.getTotalBudget().longValue() : "Not set",
+            project.getAuditPeriodStart() != null ? project.getAuditPeriodStart().toString() : "Not set",
+            project.getAuditPeriodEnd()   != null ? project.getAuditPeriodEnd().toString()   : "Not set"
+        );
+
+        try {
+            ObjectNode payload = objectMapper.createObjectNode();
+            payload.put("prompt", prompt);
+            JsonNode response = callAiService("/gemini-insights", payload);
+
+            if (response.has("error") || response.has("summary") == false) {
+                return buildFallbackInsights(project, compliancePct, openFindings, criticalFindings, pending, total);
+            }
+
+            Map<String, Object> result = new LinkedHashMap<>();
+            response.fields().forEachRemaining(e -> {
+                if (e.getValue().isArray()) {
+                    List<String> list = new ArrayList<>();
+                    e.getValue().forEach(item -> list.add(item.asText()));
+                    result.put(e.getKey(), list);
+                } else {
+                    result.put(e.getKey(), e.getValue().asText());
+                }
+            });
+            return result;
+
+        } catch (Exception e) {
+            return buildFallbackInsights(project, compliancePct, openFindings, criticalFindings, pending, total);
+        }
+    }
+
+    private Map<String, Object> buildFallbackInsights(Project project, int compliancePct,
+                                                        long openFindings, long criticalFindings,
+                                                        long pending, long total) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("summary",
+            String.format("Project '%s' has a compliance score of %d%%. %s",
+                project.getName(), compliancePct,
+                compliancePct >= 80 ? "The audit is progressing well." :
+                compliancePct >= 50 ? "Several transactions require attention." :
+                "Significant compliance gaps need immediate action."));
+        result.put("strengths", compliancePct >= 80
+            ? List.of("High approval rate indicates strong documentation practices", "Evidence collection is on track")
+            : List.of("Audit process has been initiated", "Transactions are being tracked"));
+        result.put("improvements", List.of(
+            pending > 0 ? pending + " transactions are still pending evidence — prioritise collection" : "Evidence collection is complete",
+            openFindings > 0 ? openFindings + " findings remain open — resolve before sign-off" : "All findings are resolved",
+            "Ensure all vendor links are established for complete three-way match"));
+        result.put("risks", List.of(
+            criticalFindings > 0 ? criticalFindings + " CRITICAL findings could block sign-off" : "No critical findings at this time",
+            compliancePct < 80 ? "Low compliance score may delay audit completion" : "Compliance score is within acceptable range"));
+        result.put("recommendations", List.of(
+            "Run duplicate detection to identify any potential duplicate transactions",
+            "Resolve all open findings before advancing audit status",
+            "Ensure bank statements are imported and matched for all transactions"));
+        return result;
     }
 
     // ── Internal helpers ─────────────────────────────────────────────────────

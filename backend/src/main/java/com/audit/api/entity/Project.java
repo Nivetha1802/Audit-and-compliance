@@ -27,9 +27,11 @@ public class Project extends BaseEntity {
 
     @Column(name = "end_date")
     private LocalDate endDate;
-
     @Column(name = "total_budget")
     private Double totalBudget;
+
+    @Column(name = "units_proposed")
+    private Integer unitsProposed;
 
     private String categories; // Comma-separated: Revenue, Expense, WIP
 
@@ -81,6 +83,9 @@ public class Project extends BaseEntity {
     public void setDescription(String description) { this.description = description; }
     public LocalDate getStartDate() { return startDate; }
     public void setStartDate(LocalDate startDate) { this.startDate = startDate; }
+    public Integer getUnitsProposed() { return unitsProposed; }
+    public void setUnitsProposed(Integer unitsProposed) { this.unitsProposed = unitsProposed; }
+
     public LocalDate getEndDate() { return endDate; }
     public void setEndDate(LocalDate endDate) { this.endDate = endDate; }
     public Double getTotalBudget() { return totalBudget; }

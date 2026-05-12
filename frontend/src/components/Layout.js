@@ -19,18 +19,19 @@ const NAV_GROUPS = [
   {
     label: 'AUDIT MANAGEMENT',
     items: [
-      { to: '/projects',     icon: '📁', label: 'Projects' },
-      { to: '/transactions', icon: '📊', label: 'Transactions' },
-      { to: '/findings',     icon: '⚠️', label: 'Findings' },
-      { to: '/tasks',        icon: '✅', label: 'Tasks' },
+      { to: '/projects',           icon: '📁', label: 'Projects' },
+      { to: '/general-ledger',     icon: '📄', label: 'General Ledger Data' },
+      { to: '/evidence-management',icon: '🗂', label: 'Evidence Management' },
+      { to: '/audit-analysis',     icon: '🔬', label: 'Conduct Audit Analysis' },
+      { to: '/findings',           icon: '⚠️', label: 'Findings' },
+      { to: '/tasks',              icon: '✅', label: 'Tasks' },
     ],
   },
   {
     label: 'CONFIGURATION',
     items: [
       { to: '/evidence-checklist', icon: '📋', label: 'Evidence Checklists' },
-      { to: '/ai-validation',       icon: '🤖', label: 'AI Analysis' },
-      { to: '/org-setup',           icon: '⚙️', label: 'Settings', adminOnly: true },
+      // { to: '/ai-validation',       icon: '🤖', label: 'AI Analysis' },
       { to: '/vendors',             icon: '🏢', label: 'Vendors' },
     ],
   },
@@ -174,6 +175,9 @@ export default function Layout({ children }) {
             <div style={{ position: 'relative', cursor: 'pointer' }}>
               <span style={{ fontSize: '1.1rem' }}>🔔</span>
               <span style={{ position: 'absolute', top: '-4px', right: '-4px', width: '14px', height: '14px', backgroundColor: '#dc2626', borderRadius: '50%', fontSize: '0.55rem', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '700' }}>3</span>
+            </div>
+            <div title="Settings" style={{ cursor: 'pointer' }}>
+              <span style={{ fontSize: '1.1rem' }}>⚙️</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
               <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: SIDEBAR_ACTIVE, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '0.75rem', fontWeight: '700' }}>

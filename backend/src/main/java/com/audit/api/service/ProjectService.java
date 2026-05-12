@@ -64,6 +64,7 @@ public class ProjectService {
         project.setStartDate(updates.getStartDate());
         project.setEndDate(updates.getEndDate());
         project.setTotalBudget(updates.getTotalBudget());
+        project.setUnitsProposed(updates.getUnitsProposed());
         project.setProjectOwnerId(updates.getProjectOwnerId());
         project.setAuditorId(updates.getAuditorId());
         if (updates.getStatus() != null) project.setStatus(updates.getStatus());

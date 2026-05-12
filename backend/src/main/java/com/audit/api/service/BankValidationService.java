@@ -33,9 +33,6 @@ public class BankValidationService {
 
     /**
      * Resolve the L1 root category name for a given category/subcategory name.
-     * Walks up the master category tree: if the name matches an L2, returns its L1 parent name.
-     * If it matches an L1 directly, returns that name.
-     * Falls back to the raw categoryName if nothing matches.
      */
     private String resolveL1Category(String categoryName, String subcategory, UUID orgId) {
         if (orgId == null) return categoryName != null ? categoryName : "";
@@ -44,13 +41,11 @@ public class BankValidationService {
         Map<UUID, MasterCategory> byId = all.stream()
                 .collect(Collectors.toMap(MasterCategory::getId, c -> c));
 
-        // Build a lookup: name (lowercase) -> category
         Map<String, MasterCategory> byName = new HashMap<>();
         for (MasterCategory c : all) {
             byName.put(c.getName().toLowerCase().trim(), c);
         }
 
-        // Try to resolve subcategory first (it's more specific)
         String probe = subcategory != null && !subcategory.isBlank() ? subcategory.trim() : null;
         if (probe != null) {
             MasterCategory found = byName.get(probe.toLowerCase());
@@ -61,7 +56,6 @@ public class BankValidationService {
             if (found != null && found.getLevel() == 1) return found.getName();
         }
 
-        // Fall back to categoryName
         if (categoryName != null && !categoryName.isBlank()) {
             MasterCategory found = byName.get(categoryName.toLowerCase().trim());
             if (found != null && found.getLevel() == 1) return found.getName();
@@ -69,7 +63,6 @@ public class BankValidationService {
                 MasterCategory parent = byId.get(found.getParentId());
                 if (parent != null) return parent.getName();
             }
-            // If not found in master categories, return as-is (handles "Expense", "Revenue", "WIP" directly)
             return categoryName;
         }
 
@@ -81,44 +74,42 @@ public class BankValidationService {
         boolean required = false;
         boolean highRisk = false;
 
+        String category = transaction.getCategoryName() != null ? transaction.getCategoryName().toLowerCase() : "";
+        String subcategory = transaction.getSubcategory() != null ? transaction.getSubcategory().toLowerCase() : "";
+        String description = transaction.getDescription() != null ? transaction.getDescription().toLowerCase() : "";
+        String ledger = transaction.getLedgerName() != null ? transaction.getLedgerName().toLowerCase() : "";
+        BigDecimal amount = transaction.getAmount() != null ? transaction.getAmount() : BigDecimal.ZERO;
+
         String l1 = resolveL1Category(
                 transaction.getCategoryName(),
                 transaction.getSubcategory(),
                 transaction.getOrganizationId()
         ).toLowerCase();
 
-        // Rule 1: High-value transactions (>= 50,000)
-        if (transaction.getAmount() != null &&
-                transaction.getAmount().compareTo(new BigDecimal("50000")) >= 0) {
+        // --- ENFORCEMENT RULES ---
+
+        // ✅ 1. High-value transactions (IF amount >= 50,000)
+        if (amount.compareTo(new BigDecimal("50000")) >= 0) {
             required = true;
             reasons.add("High-value transaction (>= ₹50,000)");
-            if (transaction.getAmount().compareTo(new BigDecimal("500000")) >= 0) {
+            if (amount.compareTo(new BigDecimal("500000")) >= 0) {
                 highRisk = true;
             }
         }
 
-        // Rule 2: Any Expense category transaction requires bank validation
-        if (l1.contains("expense")) {
+        // ✅ 2. Vendor payments (IF category = Expense AND subcategory = Vendor Payment)
+        if (l1.contains("expense") && subcategory.contains("vendor payment")) {
             required = true;
-            reasons.add("Expense transaction (" + transaction.getCategoryName()
-                    + (transaction.getSubcategory() != null ? " / " + transaction.getSubcategory() : "") + ")");
+            reasons.add("Vendor Payment (Expense)");
         }
 
-        // Rule 3: Any Revenue category transaction requires bank validation
+        // ✅ 3. Revenue / Customer receipts (IF category = Revenue)
         if (l1.contains("revenue")) {
             required = true;
-            reasons.add("Revenue transaction (" + transaction.getCategoryName()
-                    + (transaction.getSubcategory() != null ? " / " + transaction.getSubcategory() : "") + ")");
+            reasons.add("Revenue / Customer receipt");
         }
 
-        // Rule 4: WIP transactions above threshold
-        if (l1.contains("wip") && transaction.getAmount() != null &&
-                transaction.getAmount().compareTo(new BigDecimal("100000")) >= 0) {
-            required = true;
-            reasons.add("WIP transaction >= ₹1,00,000");
-        }
-
-        // Rule 5: Evidence/Invoice uploaded
+        // ✅ 4. Transactions with uploaded invoices
         if (transaction.getId() != null) {
             Optional<com.audit.api.entity.Checklist> clOpt =
                     checklistRepository.findByTransactionId(transaction.getId());
@@ -127,19 +118,19 @@ public class BankValidationService {
                         clOpt.get().getId(), true, true);
                 if (provided > 0) {
                     required = true;
-                    reasons.add("Evidence/Invoice uploaded");
+                    reasons.add("Invoice/Evidence uploaded");
                 }
             }
         }
 
-        // Rule 6: Round-number suspicious amounts (multiples of 10,000 >= 10,000)
-        if (transaction.getAmount() != null && isRoundNumber(transaction.getAmount())) {
+        // ✅ 5. Round-number or suspicious amounts (IF amount = 100k or 500k)
+        if (isSuspiciousRoundNumber(amount)) {
             required = true;
             highRisk = true;
             reasons.add("Suspicious round-number amount");
         }
 
-        // Rule 7: New or high-risk vendors
+        // ✅ 6. New or high-risk vendors
         if (transaction.getVendorId() != null) {
             Optional<Vendor> vendorOpt = vendorRepository.findById(transaction.getVendorId());
             if (vendorOpt.isPresent()) {
@@ -156,20 +147,43 @@ public class BankValidationService {
             }
         }
 
-        // Rule 8: Tax-related subcategory
-        if (transaction.getSubcategory() != null &&
-                transaction.getSubcategory().toLowerCase().contains("tax")) {
+        // ✅ 9. Tax-related payments (IF subcategory = Tax & Compliance)
+        if (subcategory.contains("tax") || subcategory.contains("compliance")) {
             required = true;
-            reasons.add("Tax-related payment: " + transaction.getSubcategory());
+            reasons.add("Tax & Compliance related payment");
+        }
+
+        // --- EXCLUSION RULES (OVERRIDE) ---
+
+        // 🚫 Internal entries (Depreciation, Accruals, Adjustments)
+        if (description.contains("depreciation") || description.contains("accrual") || 
+            description.contains("adjustment") || ledger.contains("depreciation")) {
+            required = false;
+            reasons.clear();
+            reasons.add("Internal Entry (Exempt)");
+        }
+
+        // 🚫 WIP (most cases)
+        if (l1.contains("wip") && amount.compareTo(new BigDecimal("100000")) < 0) {
+            required = false;
+            reasons.clear();
+            reasons.add("WIP Transaction < ₹1,00,000 (Exempt)");
+        }
+
+        // 🚫 Low-value routine transactions (IF amount < 5,000)
+        if (amount.compareTo(new BigDecimal("5000")) < 0 && !subcategory.contains("tax")) {
+            required = false;
+            reasons.clear();
+            reasons.add("Low-value transaction < ₹5,000 (Exempt)");
         }
 
         transaction.setBankValidationRequired(required);
         transaction.setIsHighRisk(highRisk);
-        transaction.setValidationReason(required ? String.join("; ", reasons) : null);
+        transaction.setValidationReason((required || (reasons.size() > 0 && reasons.get(0).contains("Exempt"))) ? String.join("; ", reasons) : null);
     }
 
-    private boolean isRoundNumber(BigDecimal amount) {
+    private boolean isSuspiciousRoundNumber(BigDecimal amount) {
         long val = amount.longValue();
-        return val >= 10000 && val % 10000 == 0;
+        return val > 0 && (val == 100000 || val == 500000 || val == 1000000 || (val >= 50000 && val % 50000 == 0));
     }
 }

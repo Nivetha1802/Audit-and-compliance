@@ -111,6 +111,13 @@ public class AiAnalysisController {
         return ResponseEntity.ok(aiAnalysisService.getResultsByTransaction(transactionId));
     }
 
+    /** Gemini AI audit insights for a project — compliance summary, risks, recommendations */
+    @GetMapping("/audit-insights/{projectId}")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('AUDITOR') or hasRole('COMPLIANCE_OFFICER')")
+    public ResponseEntity<Map<String, Object>> getAuditInsights(@PathVariable UUID projectId) {
+        return ResponseEntity.ok(aiAnalysisService.generateAuditInsights(projectId));
+    }
+
     private Double toDouble(Object val) {
         if (val == null) return null;
         if (val instanceof Number) return ((Number) val).doubleValue();

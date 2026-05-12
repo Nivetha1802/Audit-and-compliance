@@ -14,13 +14,7 @@ export default function Login() {
     try {
       const res = await authApi.login({ email, password });
       login(res.data);
-      
-      // If setup is required and user is an ADMIN, redirect to org setup
-      if (res.data.setupRequired && res.data.role === 'ADMIN') {
-        navigate('/org-setup');
-      } else {
-        navigate('/');
-      }
+      navigate('/');
     } catch (err) {
       console.error(err);
       alert('Login failed: ' + (err.response?.data?.message || 'Invalid credentials'));

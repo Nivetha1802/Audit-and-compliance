@@ -333,5 +333,36 @@ def duplicate_detection():
     })
 
 
+@app.route('/gemini-insights', methods=['POST'])
+def gemini_insights():
+    """
+    Accepts a prompt string and returns structured JSON audit insights from Gemini.
+    Body: { prompt: str }
+    Returns: { summary, strengths, improvements, risks, recommendations }
+    """
+    body = request.get_json(force=True, silent=True) or {}
+    prompt = body.get('prompt', '')
+
+    if not prompt:
+        return jsonify({'error': 'No prompt provided'}), 400
+
+    if not GEMINI_API_KEY:
+        return jsonify({'error': 'GEMINI_API_KEY not set'}), 500
+
+    try:
+        model = genai.GenerativeModel('gemini-2.5-flash')
+        response = model.generate_content(prompt)
+        raw = response.text.strip()
+        print(f'[DEBUG] gemini_insights raw: {raw!r}', flush=True)
+
+        # Strip markdown code fences if present
+        clean = re.sub(r'^```(?:json)?\s*|\s*```$', '', raw, flags=re.MULTILINE).strip()
+        result = json.loads(clean)
+        return jsonify(result)
+    except Exception as e:
+        print(f'[DEBUG] gemini_insights failed: {e}', flush=True)
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == '__main__':
     app.run(port=5000, debug=True)
