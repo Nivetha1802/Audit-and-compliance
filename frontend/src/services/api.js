@@ -112,6 +112,7 @@ export const vendorsApi = {
   verifyGst: (id) => api.post(`/vendors/${id}/verify-gst`),
 };
 
+
 export const findingApi = {
   getAll: () => api.get('/findings'),
   create: (data) => api.post('/findings', data),

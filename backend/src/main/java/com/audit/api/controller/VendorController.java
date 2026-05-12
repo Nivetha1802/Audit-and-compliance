@@ -5,6 +5,7 @@ import com.audit.api.repository.VendorRepository;
 import com.audit.api.util.SecurityUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -33,6 +34,7 @@ public class VendorController {
     // @PostMapping
     // public ResponseEntity<Vendor> createVendor(@RequestBody Vendor vendor) {
     @PostMapping
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Vendor> createVendor(@RequestBody Vendor vendor) {
         vendor.setOrganizationId(securityUtils.getCurrentOrganizationId());
         
@@ -44,6 +46,7 @@ public class VendorController {
         return ResponseEntity.ok(vendorRepository.save(vendor));
     }
     @PutMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Vendor> updateVendor(
             @PathVariable UUID id,
             @RequestBody Vendor vendorDetails) {
@@ -80,6 +83,7 @@ public class VendorController {
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> deleteVendor(@PathVariable UUID id) {
         UUID orgId = securityUtils.getCurrentOrganizationId();
         return vendorRepository.findById(id)

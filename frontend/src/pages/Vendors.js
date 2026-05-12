@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { vendorsApi, masterCategoriesApi } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import { FiCheckCircle, FiShield, FiAlertTriangle } from 'react-icons/fi';
 import { FiPlus, FiTrash2, FiEdit2, FiEye, FiUser, FiCreditCard, FiPhone, FiX } from 'react-icons/fi';
 
@@ -121,7 +122,7 @@ function VendorForm({ formData, setFormData, categoryGroups, onSubmit, onCancel,
 }
 
 // ── View / Edit drawer ───────────────────────────────────────────────────────
-function VendorDrawer({ vendor, categoryGroups, onClose, onSaved, onDeleted }) {
+function VendorDrawer({ vendor, categoryGroups, onClose, onSaved, onDeleted, isAdmin }) {
     const [mode, setMode] = useState('view'); // 'view' | 'edit'
     const [formData, setFormData] = useState({ ...vendor });
     const [saving, setSaving] = useState(false);
@@ -285,8 +286,8 @@ function VendorDrawer({ vendor, categoryGroups, onClose, onSaved, onDeleted }) {
                 )}
             </div>
 
-            {/* Footer — delete button only in view mode */}
-            {mode === 'view' && (
+            {/* Footer — delete button only in view mode for ADMIN */}
+            {mode === 'view' && isAdmin && (
                 <div className="p-4 border-t border-gray-100">
                     <button onClick={handleDelete}
                         className="w-full flex items-center justify-center gap-2 py-2 text-sm font-semibold text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors">
@@ -300,6 +301,8 @@ function VendorDrawer({ vendor, categoryGroups, onClose, onSaved, onDeleted }) {
 
 // ── Main page ────────────────────────────────────────────────────────────────
 const Vendors = () => {
+    const { user } = useAuth();
+    const isAdmin = user?.role === 'ADMIN';
     const [vendors, setVendors] = useState([]);
     const [loading, setLoading] = useState(true);
     const [categoryGroups, setCategoryGroups] = useState([]);
@@ -363,10 +366,12 @@ const Vendors = () => {
                     <h1 className="text-2xl font-bold text-gray-800">Vendor Management</h1>
                     <p className="text-sm text-gray-500 mt-0.5">{vendors.length} vendor{vendors.length !== 1 ? 's' : ''} registered</p>
                 </div>
-                <button onClick={() => setShowCreateModal(true)}
-                    className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-indigo-700 transition-colors">
-                    <FiPlus /> Add New Vendor
-                </button>
+                {isAdmin && (
+                    <button onClick={() => setShowCreateModal(true)}
+                        className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-indigo-700 transition-colors">
+                        <FiPlus /> Add New Vendor
+                    </button>
+                )}
             </div>
 
             {/* Table */}
@@ -433,7 +438,7 @@ const Vendors = () => {
             )}
 
             {/* Create modal */}
-            {showCreateModal && (
+            {showCreateModal && isAdmin && (
                 <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center p-4 z-50 overflow-y-auto">
                     <div className="bg-white rounded-xl w-full max-w-2xl p-6 relative my-8 shadow-xl">
                         <button onClick={() => setShowCreateModal(false)}
@@ -467,6 +472,7 @@ const Vendors = () => {
                         onClose={() => setSelectedVendor(null)}
                         onSaved={handleDrawerSaved}
                         onDeleted={handleDrawerDeleted}
+                        isAdmin={isAdmin}
                     />
                 </>
             )}

@@ -77,6 +77,19 @@ public class AuditTaskService {
     }
 
     /**
+     * Used by @PreAuthorize SpEL: returns true if the authenticated user (by email)
+     * is the user assigned to the given task.
+     */
+    public boolean isAssignedUser(UUID taskId, String email) {
+        return taskRepository.findById(taskId)
+                .map(task -> {
+                    if (task.getAssignedTo() == null) return false;
+                    return securityUtils.getCurrentUser().getId().equals(task.getAssignedTo());
+                })
+                .orElse(false);
+    }
+
+    /**
      * Auto-generate tasks for a finding:
      * - RESUBMIT_EVIDENCE task assigned to the transaction owner
      * - AUDIT_REVIEW task assigned to the CA (auditor)

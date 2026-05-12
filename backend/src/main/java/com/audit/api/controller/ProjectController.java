@@ -5,6 +5,7 @@ import com.audit.api.service.AuditLifecycleService;
 import com.audit.api.service.ProjectService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -31,6 +32,7 @@ public class ProjectController {
     }
 
     @PostMapping
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Project> createProject(@RequestBody Project project) {
         return ResponseEntity.ok(projectService.createProject(project));
     }
@@ -41,12 +43,14 @@ public class ProjectController {
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Project> updateProject(@PathVariable UUID id, @RequestBody Project project) {
         return ResponseEntity.ok(projectService.updateProject(id, project));
     }
 
     /** Advance audit status: DRAFT → IN_PROGRESS → UNDER_REVIEW → SIGNED_OFF */
     @PostMapping("/{id}/advance-audit")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('AUDITOR')")
     public ResponseEntity<Project> advanceAudit(
             @PathVariable UUID id,
             @RequestBody Map<String, String> body) {
@@ -59,6 +63,7 @@ public class ProjectController {
 
     /** CA formal sign-off */
     @PostMapping("/{id}/sign-off")
+    @PreAuthorize("hasRole('AUDITOR') or hasRole('ADMIN')")
     public ResponseEntity<Project> signOff(
             @PathVariable UUID id,
             @RequestBody Map<String, String> body) {

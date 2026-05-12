@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { taskApi, userApi } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
 const PRIORITY_COLORS = { CRITICAL: '#dc2626', HIGH: '#ea580c', MEDIUM: '#d97706', LOW: '#16a34a' };
 const STATUS_COLORS   = { OPEN: '#d97706', IN_PROGRESS: '#2563eb', PENDING_REVIEW: '#7c3aed', COMPLETED: '#16a34a', REJECTED: '#dc2626' };
@@ -10,6 +11,8 @@ const STATUSES        = ['OPEN', 'IN_PROGRESS', 'PENDING_REVIEW', 'COMPLETED', '
 const emptyForm = { title: '', description: '', taskType: 'SUBMIT_EVIDENCE', priority: 'MEDIUM', assignedTo: '', dueDate: '', status: 'OPEN' };
 
 export default function Tasks() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
   const [tasks, setTasks] = useState([]);
   const [users, setUsers] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -66,13 +69,15 @@ export default function Tasks() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
         <h1 style={{ margin: 0 }}>Audit Tasks</h1>
-        <button onClick={showForm ? handleCancel : () => setShowForm(true)}
-          style={{ padding: '0.5rem 1.25rem', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '0.375rem', cursor: 'pointer', fontWeight: '500' }}>
-          {showForm ? 'Cancel' : '+ New Task'}
-        </button>
+        {isAdmin && (
+          <button onClick={showForm ? handleCancel : () => setShowForm(true)}
+            style={{ padding: '0.5rem 1.25rem', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '0.375rem', cursor: 'pointer', fontWeight: '500' }}>
+            {showForm ? 'Cancel' : '+ New Task'}
+          </button>
+        )}
       </div>
 
-      {showForm && (
+      {showForm && isAdmin && (
         <div style={{ backgroundColor: 'white', padding: '1.5rem', borderRadius: '0.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', marginBottom: '1.5rem' }}>
           <h3 style={{ marginTop: 0 }}>{editingId ? 'Edit Task' : 'Create Task'}</h3>
           {error && <div style={{ marginBottom: '1rem', padding: '0.75rem', backgroundColor: '#fee2e2', color: '#991b1b', borderRadius: '0.25rem', fontSize: '0.875rem' }}>{error}</div>}
@@ -162,7 +167,9 @@ export default function Tasks() {
                 </select>
                 <div style={{ display: 'flex', gap: '0.3rem' }}>
                   <button onClick={() => handleEdit(t)} style={{ padding: '0.2rem 0.5rem', backgroundColor: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '0.25rem', cursor: 'pointer', fontSize: '0.72rem' }}>Edit</button>
-                  <button onClick={() => handleDelete(t.id)} style={{ padding: '0.2rem 0.5rem', backgroundColor: '#fee2e2', color: '#991b1b', border: 'none', borderRadius: '0.25rem', cursor: 'pointer', fontSize: '0.72rem' }}>Delete</button>
+                  {isAdmin && (
+                    <button onClick={() => handleDelete(t.id)} style={{ padding: '0.2rem 0.5rem', backgroundColor: '#fee2e2', color: '#991b1b', border: 'none', borderRadius: '0.25rem', cursor: 'pointer', fontSize: '0.72rem' }}>Delete</button>
+                  )}
                 </div>
               </div>
             </div>

@@ -62,6 +62,8 @@ export default function OrganizationSetup() {
 
   const [tree, setTree]     = useState([]);
   const [newL1, setNewL1]   = useState('');
+
+
   const [newL2, setNewL2]   = useState({});
   const [newL3, setNewL3]   = useState({});
   const [editState, setEditState] = useState({ type: null, l1Idx: null, l2Idx: null, l3Idx: null, value: '' });
@@ -345,6 +347,8 @@ export default function OrganizationSetup() {
                         </div>
 
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.75rem' }}>
+
+
                           {l2.children?.map((l3, l3Idx) => (
                             <span key={l3Idx} style={{ backgroundColor: '#f3f4f6', color: '#1f2937', padding: '0.25rem 0.6rem', borderRadius: '9999px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.35rem', border: '1px solid #e5e7eb' }}>
                               {editState.type === 'L3' && editState.l1Idx === l1Idx && editState.l2Idx === l2Idx && editState.l3Idx === l3Idx ? (

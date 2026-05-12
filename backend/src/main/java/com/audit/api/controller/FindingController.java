@@ -4,6 +4,7 @@ import com.audit.api.entity.Finding;
 import com.audit.api.service.FindingService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -31,11 +32,13 @@ public class FindingController {
     }
 
     @PostMapping
+    @PreAuthorize("hasRole('ADMIN') or hasRole('AUDITOR')")
     public ResponseEntity<Finding> create(@RequestBody Finding finding) {
         return ResponseEntity.ok(findingService.createFinding(finding));
     }
 
     @PatchMapping("/{id}/status")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('AUDITOR')")
     public ResponseEntity<Finding> updateStatus(
             @PathVariable UUID id,
             @RequestParam String status

@@ -27,10 +27,8 @@ function EvidencePanel({ transaction, users, currentUser, onClose, onStatusChang
   const [items, setItems] = useState([]);
   const [readiness, setReadiness] = useState(null);
   const [uploading, setUploading] = useState(null);
-  const [validating, setValidating] = useState(null);   // itemId being validated
-  const [validationResults, setValidationResults] = useState({}); // itemId -> result
-  const [threeWayRunning, setThreeWayRunning] = useState(false);
-  const [threeWayResult, setThreeWayResult] = useState(null);
+  const [validating, setValidating] = useState(null);
+  const [validationResults, setValidationResults] = useState({});
   const [tasks, setTasks] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [showTaskForm, setShowTaskForm] = useState(false);
@@ -76,7 +74,26 @@ function EvidencePanel({ transaction, users, currentUser, onClose, onStatusChang
     setUploading(itemId);
     const fd = new FormData();
     fd.append('file', file);
-    try { await evidenceApi.uploadEvidence(itemId, fd); loadData(); }
+    try {
+      const uploadRes = await evidenceApi.uploadEvidence(itemId, fd);
+      await loadData();
+      // Auto-validate amount after upload if the item has a document
+      const docId = uploadRes.data?.documentId;
+      if (docId) {
+        setValidating(itemId);
+        try {
+          const res = await aiApi.validateEvidenceFile(transaction.id, docId);
+          setValidationResults(prev => ({ ...prev, [itemId]: res.data }));
+        } catch (err) {
+          setValidationResults(prev => ({
+            ...prev,
+            [itemId]: { status: 'ERROR', issues: ['Auto-validation failed: ' + (err.message || 'Unknown error')] }
+          }));
+        } finally {
+          setValidating(null);
+        }
+      }
+    }
     catch (err) { alert('Upload failed'); }
     finally { setUploading(null); }
   };
@@ -86,35 +103,6 @@ function EvidencePanel({ transaction, users, currentUser, onClose, onStatusChang
     if (!window.confirm('Remove this evidence?')) return;
     try { await evidenceApi.removeEvidence(itemId); loadData(); }
     catch (err) { alert('Failed to remove evidence'); }
-  };
-
-  const handleValidate = async (item) => {
-    if (!item.documentId) return;
-    setValidating(item.id);
-    try {
-      const res = await aiApi.validateEvidenceFile(transaction.id, item.documentId);
-      setValidationResults(prev => ({ ...prev, [item.id]: res.data }));
-    } catch (err) {
-      setValidationResults(prev => ({
-        ...prev,
-        [item.id]: { status: 'ERROR', issues: ['Validation failed: ' + (err.message || 'Unknown error')] }
-      }));
-    } finally {
-      setValidating(null);
-    }
-  };
-
-  const handleThreeWayMatch = async () => {
-    setThreeWayRunning(true);
-    setThreeWayResult(null);
-    try {
-      const res = await aiApi.threeWayMatchFromDocs(transaction.id);
-      setThreeWayResult(res.data);
-    } catch (err) {
-      setThreeWayResult({ status: 'ERROR', issues: 'Three-way match failed: ' + (err.response?.data?.message || err.message) });
-    } finally {
-      setThreeWayRunning(false);
-    }
   };
 
   const handleCreateTask = async (e) => {
@@ -261,40 +249,6 @@ function EvidencePanel({ transaction, users, currentUser, onClose, onStatusChang
           )}
         </div>
 
-        {/* Three-Way Match */}
-        {isAuditor && (
-          <div style={{ marginBottom: '1.25rem', padding: '0.75rem', border: '1px solid #e0e7ff', borderRadius: '0.375rem', backgroundColor: '#f5f3ff' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-              <div style={{ fontWeight: '600', fontSize: '0.875rem', color: '#4c1d95' }}>🔗 Three-Way Match (PO → GRN → Invoice)</div>
-              <button onClick={handleThreeWayMatch} disabled={threeWayRunning}
-                style={{ fontSize: '0.75rem', padding: '0.25rem 0.75rem', backgroundColor: threeWayRunning ? '#e5e7eb' : '#7c3aed', color: threeWayRunning ? '#6b7280' : 'white', border: 'none', borderRadius: '0.25rem', cursor: threeWayRunning ? 'not-allowed' : 'pointer' }}>
-                {threeWayRunning ? '🔍 Extracting...' : '▶ Run Match'}
-              </button>
-            </div>
-            <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: '0.5rem' }}>
-              Upload PO, GRN, and Invoice as checklist evidence. Item descriptions must contain "Purchase Order", "GRN", or "Invoice".
-            </div>
-            {threeWayResult && (() => {
-              const parsed = (() => { try { return JSON.parse(threeWayResult.resultJson || '{}'); } catch { return {}; } })();
-              const status = threeWayResult.status;
-              const issues = threeWayResult.issues;
-              const matched = parsed.matched || [];
-              const ext = parsed.extracted || {};
-              const bgColor = status === 'VALIDATED' ? '#f0fdf4' : status === 'MISMATCH' ? '#fff7ed' : '#fef2f2';
-              const borderColor = status === 'VALIDATED' ? '#86efac' : status === 'MISMATCH' ? '#fdba74' : '#fca5a5';
-              const icon = status === 'VALIDATED' ? '✅' : status === 'MISMATCH' ? '⚠️' : '❌';
-              return (
-                <div style={{ padding: '0.5rem 0.75rem', backgroundColor: bgColor, border: `1px solid ${borderColor}`, borderRadius: '0.25rem', fontSize: '0.75rem' }}>
-                  <div style={{ fontWeight: '600', marginBottom: '0.3rem' }}>{icon} {status}</div>
-                  {matched.length > 0 && <div style={{ color: '#16a34a', marginBottom: '0.2rem' }}>{matched.join(' · ')}</div>}
-                  {ext.po_amount > 0 && <div style={{ color: '#374151' }}>PO: ₹{Number(ext.po_amount).toLocaleString()} · GRN: ₹{Number(ext.grn_amount).toLocaleString()} · Invoice: ₹{Number(ext.invoice_amount).toLocaleString()}</div>}
-                  {issues && <div style={{ color: '#92400e', marginTop: '0.2rem' }}>{issues}</div>}
-                </div>
-              );
-            })()}
-          </div>
-        )}
-
         {/* Checklist items */}
         <div style={{ marginBottom: '1.25rem' }}>
           <div style={{ fontWeight: '600', fontSize: '0.875rem', marginBottom: '0.75rem', color: '#111827' }}>Checklist Items</div>
@@ -319,11 +273,9 @@ function EvidencePanel({ transaction, users, currentUser, onClose, onStatusChang
                     style={{ fontSize: '0.72rem', color: '#dc2626', border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}>
                     Remove evidence
                   </button>
-                  <button onClick={() => handleValidate(item)}
-                    disabled={validating === item.id}
-                    style={{ fontSize: '0.72rem', padding: '0.2rem 0.6rem', backgroundColor: validating === item.id ? '#e5e7eb' : '#7c3aed', color: validating === item.id ? '#6b7280' : 'white', border: 'none', borderRadius: '0.25rem', cursor: validating === item.id ? 'not-allowed' : 'pointer' }}>
-                    {validating === item.id ? '🔍 Validating...' : '🤖 Validate Amount'}
-                  </button>
+                  {validating === item.id && (
+                    <span style={{ fontSize: '0.72rem', color: '#7c3aed', fontStyle: 'italic' }}>🔍 Validating amount...</span>
+                  )}
                 </div>
               ) : !item.provided && canUpload ? (
                 <label style={{ display: 'inline-block', cursor: 'pointer' }}>

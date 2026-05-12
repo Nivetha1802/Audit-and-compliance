@@ -7,7 +7,7 @@ import Projects from './pages/Projects';
 import Transactions from './pages/Transactions';
 import Findings from './pages/Findings';
 import OrganizationSetup from './pages/OrganizationSetup';
-import ChecklistTemplates from './pages/ChecklistTemplates';
+import EvidenceChecklists from './pages/EvidenceChecklists';
 import Tasks from './pages/Tasks';
 import AiValidation from './pages/AiValidation';
 import Vendors from './pages/Vendors';
@@ -34,7 +34,7 @@ function App() {
           <Route path="/findings" element={<ProtectedRoute><Layout><Findings /></Layout></ProtectedRoute>} />
           <Route path="/tasks" element={<ProtectedRoute><Layout><Tasks /></Layout></ProtectedRoute>} />
           <Route path="/vendors" element={<ProtectedRoute><Layout><Vendors /></Layout></ProtectedRoute>} />
-          <Route path="/checklist-templates" element={<ProtectedRoute><Layout><ChecklistTemplates /></Layout></ProtectedRoute>} />
+          <Route path="/evidence-checklist" element={<ProtectedRoute><Layout><EvidenceChecklists /></Layout></ProtectedRoute>} />
           <Route path="/ai-validation" element={<ProtectedRoute><Layout><AiValidation /></Layout></ProtectedRoute>} />
           <Route path="/org-setup" element={<ProtectedRoute><Layout><OrganizationSetup /></Layout></ProtectedRoute>} />
           <Route path="/evidence" element={<ProtectedRoute><Layout><Evidence /></Layout></ProtectedRoute>} />

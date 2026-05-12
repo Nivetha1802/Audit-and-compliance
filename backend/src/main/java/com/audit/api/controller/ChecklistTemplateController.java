@@ -8,6 +8,7 @@ import com.audit.api.repository.ChecklistItemTemplateRepository;
 import com.audit.api.util.SecurityUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -15,7 +16,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 @RestController
-@RequestMapping("/api/v1/checklist-templates")
+@RequestMapping("/api/v1/evidence-checklist")
 public class ChecklistTemplateController {
 
     private final ChecklistTemplateRepository templateRepository;
@@ -38,6 +39,7 @@ public class ChecklistTemplateController {
     }
 
     @PostMapping
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ChecklistTemplate> createTemplate(@RequestBody ChecklistTemplateRequest request) {
         UUID orgId = securityUtils.getCurrentOrganizationId();
 
@@ -52,6 +54,7 @@ public class ChecklistTemplateController {
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ChecklistTemplate> updateTemplate(@PathVariable UUID id,
                                                             @RequestBody ChecklistTemplateRequest request) {
         UUID orgId = securityUtils.getCurrentOrganizationId();
@@ -59,7 +62,7 @@ public class ChecklistTemplateController {
                 .orElseThrow(() -> new RuntimeException("Template not found"));
 
         template.setName(request.getName());
-        template.setDescription(request.getCategory());
+        template.setDescription(String.join(",", request.getCategories()));
         ChecklistTemplate saved = templateRepository.save(template);
 
         // Replace items
@@ -74,6 +77,7 @@ public class ChecklistTemplateController {
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> deleteTemplate(@PathVariable UUID id) {
         itemRepository.deleteAll(itemRepository.findByTemplateId(id));
         templateRepository.deleteById(id);

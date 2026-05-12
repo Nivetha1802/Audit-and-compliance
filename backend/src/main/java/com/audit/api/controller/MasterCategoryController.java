@@ -6,6 +6,7 @@ import com.audit.api.repository.MasterCategoryRepository;
 import com.audit.api.util.SecurityUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
@@ -54,6 +55,7 @@ public class MasterCategoryController {
      * Replaces the entire category tree for the org (3 levels).
      */
     @PostMapping("/tree")
+    @PreAuthorize("hasRole('ADMIN')")
     @Transactional
     public ResponseEntity<List<MasterCategory>> saveTree(@RequestBody CategoryTreeRequest request) {
         UUID orgId = securityUtils.getCurrentOrganizationId();
@@ -90,6 +92,7 @@ public class MasterCategoryController {
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         MasterCategory cat = masterCategoryRepository.findById(id).orElse(null);
         if (cat != null) {

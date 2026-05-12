@@ -4,6 +4,7 @@ import com.audit.api.entity.Transaction;
 import com.audit.api.service.TransactionService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -33,6 +34,7 @@ public class TransactionController {
     }
 
     @PostMapping("/import")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('AUDITOR')")
     public ResponseEntity<Map<String, Object>> importCsv(
             @RequestParam("file") MultipartFile file,
             @RequestParam("projectId") UUID projectId) throws Exception {
@@ -45,6 +47,7 @@ public class TransactionController {
     }
 
     @PostMapping("/import-bank")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('AUDITOR')")
     public ResponseEntity<Map<String, Object>> importBankStatement(
             @RequestParam("file") MultipartFile file,
             @RequestParam("projectId") UUID projectId) throws Exception {
@@ -58,6 +61,7 @@ public class TransactionController {
     }
 
     @PatchMapping("/{id}/status")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('AUDITOR') or hasRole('COMPLIANCE_OFFICER')")
     public ResponseEntity<Transaction> updateStatus(
             @PathVariable UUID id,
             @RequestParam String status) {

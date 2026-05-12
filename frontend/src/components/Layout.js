@@ -28,9 +28,9 @@ const NAV_GROUPS = [
   {
     label: 'CONFIGURATION',
     items: [
-      { to: '/checklist-templates', icon: '📋', label: 'Checklists' },
+      { to: '/evidence-checklist', icon: '📋', label: 'Evidence Checklists' },
       { to: '/ai-validation',       icon: '🤖', label: 'AI Analysis' },
-      { to: '/org-setup',           icon: '⚙️', label: 'Org Settings', adminOnly: true },
+      { to: '/org-setup',           icon: '⚙️', label: 'Settings', adminOnly: true },
       { to: '/vendors',             icon: '🏢', label: 'Vendors' },
     ],
   },

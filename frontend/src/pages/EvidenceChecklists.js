@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api, { masterCategoriesApi } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
 const emptyForm = {
   name: '',
@@ -27,6 +28,8 @@ function buildCategoryOptions(flatCats) {
 }
 
 export default function ChecklistTemplates() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
   const [templates, setTemplates] = useState([]);
   const [categoryGroups, setCategoryGroups] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -41,7 +44,7 @@ export default function ChecklistTemplates() {
     setLoading(true);
     try {
       const [templatesRes, catsRes] = await Promise.all([
-        api.get('/checklist-templates'),
+        api.get('/evidence-checklist'),
         masterCategoriesApi.getAll(),
       ]);
       setTemplates(templatesRes.data);
@@ -61,7 +64,7 @@ export default function ChecklistTemplates() {
 
   const handleEdit = async (t) => {
     try {
-      const itemsRes = await api.get(`/checklist-templates/${t.id}/items`);
+      const itemsRes = await api.get(`/evidence-checklist/${t.id}/items`);
       setEditingId(t.id);
       setForm({
         name: t.name,
@@ -83,8 +86,8 @@ export default function ChecklistTemplates() {
     if (!form.name || form.categories.length === 0) { setError('Please fill in the name and select at least one category'); return; }
     try {
       const payload = { name: form.name, categories: form.categories, items: form.items };
-      if (editingId) { await api.put(`/checklist-templates/${editingId}`, payload); }
-      else { await api.post('/checklist-templates', payload); }
+      if (editingId) { await api.put(`/evidence-checklist/${editingId}`, payload); }
+      else { await api.post('/evidence-checklist', payload); }
       handleCancel();
       fetchData();
     } catch (err) {
@@ -94,7 +97,7 @@ export default function ChecklistTemplates() {
 
   const handleDelete = async (id) => {
     if (!window.confirm('Delete this template?')) return;
-    try { await api.delete(`/checklist-templates/${id}`); fetchData(); }
+    try { await api.delete(`/evidence-checklist/${id}`); fetchData(); }
     catch (err) { alert('Failed to delete template'); }
   };
 
@@ -106,16 +109,18 @@ export default function ChecklistTemplates() {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-        <h1 style={{ margin: 0 }}>Checklist Templates</h1>
-        <button onClick={showForm ? handleCancel : () => setShowForm(true)}
-          style={{ padding: '0.5rem 1.25rem', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '0.375rem', cursor: 'pointer', fontWeight: '500' }}>
-          {showForm ? 'Cancel' : '+ New Template'}
-        </button>
+        <h1 style={{ margin: 0 }}>Evidence Checklists</h1>
+        {isAdmin && (
+          <button onClick={showForm ? handleCancel : () => setShowForm(true)}
+            style={{ padding: '0.5rem 1.25rem', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '0.375rem', cursor: 'pointer', fontWeight: '500' }}>
+            {showForm ? 'Cancel' : '+ New Checklist'}
+          </button>
+        )}
       </div>
 
-      {showForm && (
+      {showForm && isAdmin && (
         <div style={{ backgroundColor: 'white', padding: '1.5rem', borderRadius: '0.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', marginBottom: '2rem' }}>
-          <h3 style={{ marginTop: 0 }}>{editingId ? 'Edit Template' : 'Create Checklist Template'}</h3>
+          <h3 style={{ marginTop: 0 }}>{editingId ? 'Edit Evidence Checklist' : 'Create Evidence Checklist'}</h3>
           {error && <div style={{ marginBottom: '1rem', padding: '0.75rem', backgroundColor: '#fee2e2', color: '#991b1b', borderRadius: '0.25rem', fontSize: '0.875rem' }}>{error}</div>}
 
           <form onSubmit={handleSubmit}>
@@ -177,10 +182,10 @@ export default function ChecklistTemplates() {
             {/* Checklist items */}
             <div style={{ marginBottom: '1.5rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                <label style={{ ...labelStyle, margin: 0 }}>Checklist Items</label>
+                <label style={{ ...labelStyle, margin: 0 }}>Evidence Items</label>
                 <button type="button" onClick={addItem}
                   style={{ padding: '0.25rem 0.75rem', backgroundColor: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '0.25rem', cursor: 'pointer', fontSize: '0.8rem' }}>
-                  + Add Item
+                  + Add Evidence
                 </button>
               </div>
               {form.items.map((item, index) => (
@@ -188,7 +193,7 @@ export default function ChecklistTemplates() {
                   <input
                     value={item.description}
                     onChange={(e) => updateItem(index, 'description', e.target.value)}
-                    placeholder={`Item ${index + 1} (e.g. Invoice Copy)`}
+                    placeholder={`Evidence ${index + 1} (e.g. Invoice Copy)`}
                     style={{ ...inputStyle, flex: 1 }}
                     required
                   />
@@ -218,7 +223,7 @@ export default function ChecklistTemplates() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1.5rem' }}>
         {templates.length === 0 ? (
           <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '3rem', color: '#6b7280', backgroundColor: 'white', borderRadius: '0.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-            No templates yet. Create your first checklist template.
+            No checklist yet. Create your first Evidence Checklist.
           </div>
         ) : templates.map((t) => (
           <div key={t.id} style={{ backgroundColor: 'white', padding: '1.5rem', borderRadius: '0.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
@@ -236,8 +241,12 @@ export default function ChecklistTemplates() {
                 )}
               </div>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button onClick={() => handleEdit(t)} style={{ padding: '0.2rem 0.5rem', backgroundColor: '#f3f4f6', color: '#374151', border: '1px solid #d1d5db', borderRadius: '0.25rem', cursor: 'pointer', fontSize: '0.75rem' }}>Edit</button>
-                <button onClick={() => handleDelete(t.id)} style={{ padding: '0.2rem 0.5rem', backgroundColor: '#fee2e2', color: '#991b1b', border: 'none', borderRadius: '0.25rem', cursor: 'pointer', fontSize: '0.75rem' }}>Delete</button>
+                {isAdmin && (
+                  <>
+                    <button onClick={() => handleEdit(t)} style={{ padding: '0.2rem 0.5rem', backgroundColor: '#f3f4f6', color: '#374151', border: '1px solid #d1d5db', borderRadius: '0.25rem', cursor: 'pointer', fontSize: '0.75rem' }}>Edit</button>
+                    <button onClick={() => handleDelete(t.id)} style={{ padding: '0.2rem 0.5rem', backgroundColor: '#fee2e2', color: '#991b1b', border: 'none', borderRadius: '0.25rem', cursor: 'pointer', fontSize: '0.75rem' }}>Delete</button>
+                  </>
+                )}
               </div>
             </div>
           </div>

@@ -4,6 +4,7 @@ import com.audit.api.entity.AiAnalysisResult;
 import com.audit.api.service.AiAnalysisService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -24,12 +25,14 @@ public class AiAnalysisController {
 
     /** Three-Way Match from uploaded PO/GRN/Invoice documents in checklist */
     @PostMapping("/three-way-match-docs/{transactionId}")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('AUDITOR') or hasRole('COMPLIANCE_OFFICER')")
     public ResponseEntity<AiAnalysisResult> threeWayMatchFromDocs(@PathVariable UUID transactionId) {
         return ResponseEntity.ok(aiAnalysisService.runThreeWayMatchFromDocuments(transactionId));
     }
 
     /** Three-Way Match: PO vs Work Progress vs Invoice (manual amounts) */
     @PostMapping("/three-way-match/{transactionId}")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('AUDITOR') or hasRole('COMPLIANCE_OFFICER')")
     public ResponseEntity<AiAnalysisResult> threeWayMatch(
             @PathVariable UUID transactionId,
             @RequestBody Map<String, Object> body) {
@@ -44,6 +47,7 @@ public class AiAnalysisController {
 
     /** Budget Variance: actual vs budgeted per category */
     @PostMapping("/budget-variance/{projectId}")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('AUDITOR') or hasRole('COMPLIANCE_OFFICER')")
     public ResponseEntity<AiAnalysisResult> budgetVariance(
             @PathVariable UUID projectId,
             @RequestBody Map<String, Object> body) {
@@ -56,12 +60,14 @@ public class AiAnalysisController {
 
     /** Duplicate Detection: scan all transactions in a project */
     @PostMapping("/duplicate-detection/{projectId}")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('AUDITOR') or hasRole('COMPLIANCE_OFFICER')")
     public ResponseEntity<AiAnalysisResult> duplicateDetection(@PathVariable UUID projectId) {
         return ResponseEntity.ok(aiAnalysisService.runDuplicateDetection(projectId));
     }
 
     /** Evidence Validation: validate extracted evidence against transaction */
     @PostMapping("/validate-evidence/{transactionId}")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('AUDITOR') or hasRole('COMPLIANCE_OFFICER')")
     public ResponseEntity<AiAnalysisResult> validateEvidence(
             @PathVariable UUID transactionId,
             @RequestBody Map<String, Object> evidenceMetadata) {
@@ -70,6 +76,7 @@ public class AiAnalysisController {
 
     /** Evidence Validation: upload image file and compare amount to transaction */
     @PostMapping("/validate-evidence-file/{transactionId}/{documentId}")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('AUDITOR') or hasRole('COMPLIANCE_OFFICER')")
     public ResponseEntity<AiAnalysisResult> validateEvidenceFile(
             @PathVariable UUID transactionId,
             @PathVariable UUID documentId) {
@@ -84,6 +91,7 @@ public class AiAnalysisController {
 
     /** Submit human review decision */
     @PostMapping("/review/{resultId}")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('AUDITOR') or hasRole('COMPLIANCE_OFFICER')")
     public ResponseEntity<AiAnalysisResult> submitReview(
             @PathVariable UUID resultId,
             @RequestBody Map<String, String> body) {

@@ -1,7 +1,9 @@
 package com.audit.api.service;
 
 import com.audit.api.entity.Transaction;
+import com.audit.api.entity.Vendor;
 import com.audit.api.repository.TransactionRepository;
+import com.audit.api.repository.VendorRepository;
 import com.audit.api.util.SecurityUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -25,18 +27,24 @@ public class TransactionService {
     private final CategoryMappingService categoryMappingService;
     private final BankValidationService bankValidationService;
     private final AuditLifecycleService auditLifecycleService;
+    private final VendorRepository vendorRepository;
+    private final GstVerificationService gstVerificationService;
 
     @Autowired
     public TransactionService(TransactionRepository transactionRepository,
                                SecurityUtils securityUtils,
                                CategoryMappingService categoryMappingService,
                                BankValidationService bankValidationService,
-                               AuditLifecycleService auditLifecycleService) {
+                               AuditLifecycleService auditLifecycleService,
+                               VendorRepository vendorRepository,
+                               GstVerificationService gstVerificationService) {
         this.transactionRepository = transactionRepository;
         this.securityUtils = securityUtils;
         this.categoryMappingService = categoryMappingService;
         this.bankValidationService = bankValidationService;
         this.auditLifecycleService = auditLifecycleService;
+        this.vendorRepository = vendorRepository;
+        this.gstVerificationService = gstVerificationService;
     }
 
     public List<Transaction> getAllTransactions() {
@@ -79,6 +87,10 @@ public class TransactionService {
                 tx.setProjectId(projectId);
                 tx.setStatus("PENDING_EVIDENCE");
                 tx.setOrganizationId(orgId);
+
+                // Auto-link vendor by name matching
+                autoLinkVendor(tx, orgId);
+
                 categoryMappingService.autoTag(tx, orgId);
                 bankValidationService.evaluateBankValidationRequirement(tx);
                 transactions.add(tx);
@@ -157,7 +169,6 @@ public class TransactionService {
         tx.setStatus(status);
         bankValidationService.evaluateBankValidationRequirement(tx);
         transactionRepository.save(tx);
-        // Run compliance validation when a transaction is approved
         if ("APPROVED".equals(status)) {
             auditLifecycleService.validateTransaction(id);
         }
@@ -172,6 +183,45 @@ public class TransactionService {
         tx.setVendorId(vendorId);
         bankValidationService.evaluateBankValidationRequirement(tx);
         return transactionRepository.save(tx);
+    }
+
+    /**
+     * Auto-link a vendor to a transaction by fuzzy-matching the imported
+     * vendor/customer name against registered vendor names and legal names.
+     * Exact match wins; otherwise uses Levenshtein similarity ≥ 85%.
+     */
+    private void autoLinkVendor(Transaction tx, UUID orgId) {
+        String importedName = tx.getVendorCustomer();
+        if (importedName == null || importedName.isBlank()) return;
+
+        List<Vendor> vendors = vendorRepository.findAllByOrganizationId(orgId);
+        Vendor bestMatch = null;
+        double highestScore = 0;
+
+        for (Vendor v : vendors) {
+            // Exact match (case-insensitive)
+            if (importedName.equalsIgnoreCase(v.getName()) ||
+                    (v.getLegalName() != null && importedName.equalsIgnoreCase(v.getLegalName()))) {
+                tx.setVendorId(v.getId());
+                return;
+            }
+
+            // Fuzzy match
+            double score1 = gstVerificationService.calculateNameSimilarity(importedName, v.getName());
+            double score2 = v.getLegalName() != null
+                    ? gstVerificationService.calculateNameSimilarity(importedName, v.getLegalName())
+                    : 0;
+            double best = Math.max(score1, score2);
+
+            if (best >= 85 && best > highestScore) {
+                highestScore = best;
+                bestMatch = v;
+            }
+        }
+
+        if (bestMatch != null) {
+            tx.setVendorId(bestMatch.getId());
+        }
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────
@@ -193,8 +243,6 @@ public class TransactionService {
     private String get(String[] arr, int idx) {
         return arr.length > idx ? arr[idx].trim() : "";
     }
-
-    // ── result records ────────────────────────────────────────────────────────
 
     public record ImportResult(int imported, int skipped) {}
     public record BankImportResult(int matched, int created, int skipped) {}
