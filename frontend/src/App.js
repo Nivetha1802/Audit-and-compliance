@@ -1,47 +1,41 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import Layout from './components/Layout';
 import Login from './pages/Login';
-import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Projects from './pages/Projects';
-import GeneralLedger from './pages/GeneralLedger';
-import EvidenceManagement from './pages/EvidenceManagement';
-import ConductAuditAnalysis from './pages/ConductAuditAnalysis';
 import Risks from './pages/Risks';
-import EvidenceChecklists from './pages/EvidenceChecklists';
 import Tasks from './pages/Tasks';
-import Vendors from './pages/Vendors';
-import Layout from './components/Layout';
+import EvidenceManagement from './pages/EvidenceManagement';
 import Evidence from './pages/Evidence';
-import { AuthProvider, useAuth } from './context/AuthContext';
+import GeneralLedger from './pages/GeneralLedger';
+import BankTransactionData from './pages/BankTransactionData';
+import ConductAuditAnalysis from './pages/ConductAuditAnalysis';
 
-const ProtectedRoute = ({ children }) => {
-  const { token } = useAuth();
-  if (!token) return <Navigate to="/login" />;
-  return children;
+const PrivateRoute = ({ children }) => {
+  const { user } = useAuth();
+  return user ? <Layout>{children}</Layout> : <Navigate to="/login" />;
 };
 
 function App() {
   return (
-    <AuthProvider>
-      <Router>
+    <Router>
+      <AuthProvider>
         <Routes>
-          <Route path="/login"    element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          
-          <Route path="/"         element={<ProtectedRoute><Layout><Dashboard /></Layout></ProtectedRoute>} />
-          <Route path="/projects" element={<ProtectedRoute><Layout><Projects /></Layout></ProtectedRoute>} />
-          <Route path="/general-ledger"        element={<ProtectedRoute><Layout><GeneralLedger /></Layout></ProtectedRoute>} />
-          <Route path="/evidence-management"   element={<ProtectedRoute><Layout><EvidenceManagement /></Layout></ProtectedRoute>} />
-          <Route path="/audit-analysis"        element={<ProtectedRoute><Layout><ConductAuditAnalysis /></Layout></ProtectedRoute>} />
-          <Route path="/risks"            element={<ProtectedRoute><Layout><Risks /></Layout></ProtectedRoute>} />
-          <Route path="/tasks"            element={<ProtectedRoute><Layout><Tasks /></Layout></ProtectedRoute>} />
-          <Route path="/vendors"          element={<ProtectedRoute><Layout><Vendors /></Layout></ProtectedRoute>} />
-          <Route path="/evidence-checklist" element={<ProtectedRoute><Layout><EvidenceChecklists /></Layout></ProtectedRoute>} />
-          <Route path="/evidence"         element={<ProtectedRoute><Layout><Evidence /></Layout></ProtectedRoute>} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
+          <Route path="/projects" element={<PrivateRoute><Projects /></PrivateRoute>} />
+          <Route path="/risks" element={<PrivateRoute><Risks /></PrivateRoute>} />
+          <Route path="/tasks" element={<PrivateRoute><Tasks /></PrivateRoute>} />
+          <Route path="/evidence-management" element={<PrivateRoute><EvidenceManagement /></PrivateRoute>} />
+          <Route path="/evidence/:projectId/:transactionId" element={<PrivateRoute><Evidence /></PrivateRoute>} />
+          <Route path="/general-ledger" element={<PrivateRoute><GeneralLedger /></PrivateRoute>} />
+          <Route path="/bank-transactions" element={<PrivateRoute><BankTransactionData /></PrivateRoute>} />
+          <Route path="/analysis" element={<PrivateRoute><ConductAuditAnalysis /></PrivateRoute>} />
         </Routes>
-      </Router>
-    </AuthProvider>
+      </AuthProvider>
+    </Router>
   );
 }
 

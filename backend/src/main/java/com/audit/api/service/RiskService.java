@@ -58,7 +58,6 @@ public class RiskService {
                 createTaskForRisk(savedRisk, project);
             }
         }
-        
         return savedRisk;
     }
 
@@ -68,7 +67,8 @@ public class RiskService {
             "A new risk has been identified for project: " + project.getName() + ". Description: " + risk.getDescription(),
             project.getProjectOwnerId(),
             risk.getProjectId(),
-            risk.getId()
+            risk.getId(),
+            null
         );
 
         User owner = userRepository.findById(project.getProjectOwnerId()).orElse(null);

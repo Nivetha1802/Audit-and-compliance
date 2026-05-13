@@ -1,393 +1,232 @@
 import React, { useState, useEffect } from 'react';
-import { transactionApi, projectApi, evidenceApi, aiApi } from '../services/api';
 import { 
-  FiUploadCloud, FiCheckCircle, FiXCircle, FiPaperclip, 
-  FiFileText, FiSearch, FiLayers, FiAlertCircle 
-} from 'react-icons/fi';
+  FileText, 
+  Download, 
+  Trash2, 
+  Upload, 
+  CheckCircle2, 
+  AlertCircle,
+  X,
+  Eye,
+  ArrowLeft,
+  ChevronRight
+} from 'lucide-react';
+import { evidenceApi } from '../services/api';
 
-const Evidence = () => {
-  const [projects, setProjects] = useState([]);
-  const [selectedProject, setSelectedProject] = useState(null);
-  const [transactions, setTransactions] = useState([]);
-  const [selectedTx, setSelectedTx] = useState(null);
-  const [checklistItems, setChecklistItems] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [uploading, setUploading] = useState(null); // ID of item being uploaded
-  const [aiAnalysis, setAiAnalysis] = useState(null); // Result of AI validation
-  const [searchTerm, setSearchTerm] = useState('');
+export default function Evidence({ projectId, transactionId, transaction, onBack }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
-    loadProjects();
-  }, []);
-
-  const loadProjects = async () => {
-    try {
-      const res = await projectApi.getAll();
-      setProjects(res.data);
-    } catch (err) {
-      console.error('Error loading projects', err);
+    if (transactionId) {
+      fetchItems();
     }
-  };
+  }, [transactionId]);
 
-  const loadTransactions = async (projectId) => {
-    setLoading(true);
+  const fetchItems = async () => {
     try {
-      const res = await transactionApi.getByProject(projectId);
-      setTransactions(res.data);
-      setSelectedTx(null);
-      setChecklistItems([]);
-    } catch (err) {
-      console.error('Error loading transactions', err);
+      setLoading(true);
+      const response = await evidenceApi.getItems(transactionId);
+      setItems(response.data);
+    } catch (error) {
+      console.error('Error fetching evidence items:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const loadChecklist = async (txId) => {
+  const handleFileUpload = async (e) => {
+    e.preventDefault();
+    if (!selectedFile) return;
+
     try {
-      const res = await evidenceApi.getItems(txId);
-      setChecklistItems(res.data);
-    } catch (err) {
-      console.error('Error loading checklist', err);
-    }
-  };
+      setUploading(true);
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      formData.append('transactionId', transactionId);
+      formData.append('projectId', projectId);
 
-  const handleProjectChange = (e) => {
-    const pId = e.target.value;
-    const project = projects.find(p => p.id === pId);
-    setSelectedProject(project);
-    if (pId) loadTransactions(pId);
-    else {
-      setTransactions([]);
-      setSelectedTx(null);
-      setChecklistItems([]);
-    }
-  };
-
-  const handleTxClick = (tx) => {
-    setSelectedTx(tx);
-    loadChecklist(tx.id);
-  };
-
-  const handleFileUpload = async (itemId, e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    const formData = new FormData();
-    formData.append('file', file);
-    setUploading(itemId);
-    try {
-      // 1. Upload the document first to get an ID
-      const uploadRes = await evidenceApi.uploadEvidence(itemId, formData);
-      const documentId = uploadRes.data.id; 
-
-      // 2. Trigger AI Validation via backend
-      const aiRes = await aiApi.validateEvidenceFile(selectedTx.id, documentId);
-      const extractedAmount = aiRes.data.extractedAmount;
-      
-      const amountDiff = Math.abs(extractedAmount - selectedTx.amount);
-      const isMatch = amountDiff < 0.01;
-
-      setAiAnalysis({
-        extracted: extractedAmount,
-        actual: selectedTx.amount,
-        isMatch: isMatch,
-        itemName: checklistItems.find(i => i.id === itemId)?.description
-      });
-
-      if (!isMatch) {
-        window.confirm(
-          `AI detected an amount of ₹${extractedAmount.toLocaleString()} in the document, but the transaction amount is ₹${selectedTx.amount.toLocaleString()}. The amounts do not match. Keep this evidence?`
-        );
-      }
-
-      loadChecklist(selectedTx.id); 
-    } catch (err) {
-      alert('Upload failed: ' + (err.response?.data?.message || err.message));
+      await evidenceApi.upload(formData);
+      setSelectedFile(null);
+      fetchItems();
+    } catch (error) {
+      console.error('Error uploading evidence:', error);
+      alert('Failed to upload evidence');
     } finally {
-      setUploading(null);
+      setUploading(false);
     }
   };
 
-  const filteredTransactions = transactions.filter(tx => 
-    tx.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    tx.vendorCustomer?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    tx.referenceNo?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const handleDelete = async (itemId) => {
+    if (!window.confirm('Are you sure you want to delete this evidence?')) return;
+    try {
+      await evidenceApi.deleteItem(itemId);
+      fetchItems();
+    } catch (error) {
+      console.error('Error deleting evidence:', error);
+    }
+  };
+
+  const handleDownload = (documentId) => {
+    const url = evidenceApi.download(documentId);
+    window.open(url, '_blank');
+  };
+
+  if (loading && items.length === 0) {
+    return <div className="p-8 text-center">Loading evidence...</div>;
+  }
 
   return (
-    <div className="p-6">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-800 flex items-center">
-          <FiUploadCloud className="mr-2 text-indigo-600" />
-          Evidence Management
-        </h1>
+    <div style={{ animation: 'fadeIn 0.2s ease-out' }}>
+      {/* Evidence Workspace Header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
+        <button 
+          onClick={onBack}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', display: 'flex', alignItems: 'center' }}
+        >
+          <ArrowLeft size={20} />
+        </button>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: '#64748b', marginBottom: '4px' }}>
+            <span>Transactions</span>
+            <ChevronRight size={14} />
+            <span>Evidence</span>
+            <ChevronRight size={14} />
+            <span style={{ color: '#1e293b', fontWeight: '500' }}>{transaction?.referenceNo || 'Details'}</span>
+          </div>
+          <h2 style={{ fontSize: '20px', fontWeight: 'bold', color: '#1e293b', margin: 0 }}>Manage Evidence</h2>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Sidebar: Project & Transaction Selection */}
-        <div className="lg:col-span-4 space-y-6">
-          <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Select Project</label>
-            <select 
-              className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-              onChange={handleProjectChange}
-              value={selectedProject?.id || ''}
-            >
-              <option value="">-- All Projects --</option>
-              {projects.map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-            <div className="p-4 border-b border-gray-100 bg-gray-50 flex items-center">
-              <FiLayers className="mr-2 text-gray-500" />
-              <h2 className="font-semibold text-gray-700">Transactions</h2>
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '24px' }}>
+        {/* Left Column: File List */}
+        <div>
+          <div style={{ backgroundColor: 'white', borderRadius: '12px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0', backgroundColor: '#f8fafc' }}>
+              <h3 style={{ fontSize: '16px', fontWeight: '600', margin: 0 }}>Uploaded Documents</h3>
             </div>
             
-            <div className="p-4 bg-white border-b border-gray-100">
-              <div className="relative">
-                <FiSearch className="absolute left-3 top-3 text-gray-400" />
-                <input 
-                  type="text" 
-                  placeholder="Search transactions..."
-                  className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
+            {items.length === 0 ? (
+              <div style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
+                <FileText size={48} style={{ margin: '0 auto 12px', opacity: 0.5 }} />
+                <p>No evidence documents uploaded yet.</p>
               </div>
-            </div>
-
-            <div className="max-h-[500px] overflow-y-auto">
-              {!selectedProject ? (
-                <div className="p-8 text-center text-gray-400 italic text-sm">
-                  Select a project to see transactions
-                </div>
-              ) : loading ? (
-                <div className="p-8 text-center text-gray-400 text-sm">Loading...</div>
-              ) : filteredTransactions.length === 0 ? (
-                <div className="p-8 text-center text-gray-400 text-sm">No transactions found</div>
-              ) : (
-                filteredTransactions.map(tx => (
-                  <div 
-                    key={tx.id}
-                    onClick={() => handleTxClick(tx)}
-                    className={`p-4 border-b border-gray-50 cursor-pointer transition-colors ${
-                      selectedTx?.id === tx.id ? 'bg-indigo-50 border-l-4 border-l-indigo-500' : 'hover:bg-gray-50'
-                    }`}
-                  >
-                    <div className="flex justify-between items-start mb-1">
-                      <div className="flex flex-col">
-                        <span className="font-medium text-gray-900 text-sm truncate max-w-[180px]">
-                          {tx.description}
-                        </span>
-                        <div className="flex space-x-1 mt-1">
-                          {tx.isHighRisk && (
-                            <span className="px-1.5 py-0.5 bg-red-100 text-red-600 text-[10px] font-bold rounded">
-                              HIGH RISK
-                            </span>
-                          )}
-                          <span className={`px-1.5 py-0.5 text-[10px] font-bold rounded ${
-                            tx.complianceStatus === 'COMPLIANT' ? 'bg-green-100 text-green-600' : 
-                            tx.complianceStatus === 'FLAGGED' ? 'bg-amber-100 text-amber-600' : 'bg-gray-100 text-gray-600'
-                          }`}>
-                            {tx.complianceStatus || 'PENDING'}
-                          </span>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead style={{ backgroundColor: '#f8fafc' }}>
+                  <tr>
+                    <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '12px', color: '#64748b', textTransform: 'uppercase' }}>File Name</th>
+                    <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '12px', color: '#64748b', textTransform: 'uppercase' }}>Status</th>
+                    <th style={{ padding: '12px 20px', textAlign: 'right', fontSize: '12px', color: '#64748b', textTransform: 'uppercase' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((item) => (
+                    <tr key={item.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                      <td style={{ padding: '12px 20px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{ color: '#2563eb' }}><FileText size={20} /></div>
+                          <div>
+                            <div style={{ fontSize: '14px', fontWeight: '500', color: '#1e293b' }}>{item.documentName || 'Document'}</div>
+                            <div style={{ fontSize: '12px', color: '#94a3b8' }}>{new Date(item.createdAt).toLocaleDateString()}</div>
+                          </div>
                         </div>
-                      </div>
-                      <div className="text-right">
-                        <p className={`text-xs font-bold ${tx.debitCredit === 'Credit' ? 'text-green-600' : 'text-red-600'}`}>
-                          ₹{tx.amount?.toLocaleString()}
-                        </p>
-                        <p className="text-[10px] text-gray-400">{tx.transactionDate}</p>
-                      </div>
-                    </div>
-                    <div className="flex justify-between items-center text-xs text-gray-500 mt-2">
-                      <span className="truncate max-w-[100px]">{tx.vendorCustomer || 'Internal'}</span>
-                      <span className="text-[10px] italic">Ref: {tx.referenceNo || 'N/A'}</span>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
+                      </td>
+                      <td style={{ padding: '12px 20px' }}>
+                        <span style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '12px', backgroundColor: '#dcfce7', color: '#166534' }}>Verified</span>
+                      </td>
+                      <td style={{ padding: '12px 20px', textAlign: 'right' }}>
+                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                          <button 
+                            onClick={() => handleDownload(item.documentId)}
+                            style={{ padding: '6px', color: '#64748b', hover: { color: '#2563eb' }, background: 'none', border: 'none', cursor: 'pointer' }}
+                            title="View"
+                          >
+                            <Eye size={18} />
+                          </button>
+                          <button 
+                            onClick={() => handleDelete(item.id)}
+                            style={{ padding: '6px', color: '#64748b', hover: { color: '#ef4444' }, background: 'none', border: 'none', cursor: 'pointer' }}
+                            title="Delete"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
 
-        {/* Right Content: Checklist & Upload */}
-        <div className="lg:col-span-8">
-          {!selectedTx ? (
-            <div className="bg-white rounded-xl border-2 border-dashed border-gray-200 p-12 text-center">
-              <FiPaperclip className="mx-auto text-4xl text-gray-300 mb-4" />
-              <h3 className="text-lg font-medium text-gray-900">No Transaction Selected</h3>
-              <p className="text-gray-500 max-w-xs mx-auto mt-2 text-sm">
-                Select a transaction from the list on the left to start uploading evidence.
-              </p>
+        {/* Right Column: Transaction Details & Upload */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+            <h3 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '16px' }}>Transaction Context</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '14px', color: '#64748b' }}>Reference:</span>
+                <span style={{ fontSize: '14px', fontWeight: '500' }}>{transaction?.referenceNo}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '14px', color: '#64748b' }}>Date:</span>
+                <span style={{ fontSize: '14px', fontWeight: '500' }}>{transaction?.transactionDate}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '14px', color: '#64748b' }}>Amount:</span>
+                <span style={{ fontSize: '14px', fontWeight: 'bold', color: transaction?.amount < 0 ? '#ef4444' : '#10b981' }}>
+                  ${Math.abs(transaction?.amount || 0).toLocaleString()}
+                </span>
+              </div>
             </div>
-          ) : (
-            <div className="space-y-6">
-              {aiAnalysis && (
-                <div className={`p-4 rounded-xl border flex items-center justify-between shadow-sm ${
-                  aiAnalysis.isMatch ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-800'
-                }`}>
-                  <div className="flex items-center">
-                    {aiAnalysis.isMatch ? <FiCheckCircle className="mr-3 text-xl" /> : <FiAlertCircle className="mr-3 text-xl" />}
-                    <div>
-                      <p className="text-sm font-bold">
-                        AI Validation Result for {aiAnalysis.itemName}
-                      </p>
-                      <p className="text-xs">
-                        {aiAnalysis.isMatch 
-                          ? `Amount confirmed: ₹${aiAnalysis.extracted.toLocaleString()} matches transaction.` 
-                          : `Amount mismatch: Document has ₹${aiAnalysis.extracted.toLocaleString()}, Transaction has ₹${aiAnalysis.actual.toLocaleString()}.`}
-                      </p>
+          </div>
+
+          <div style={{ backgroundColor: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+            <h3 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '16px' }}>Upload New Evidence</h3>
+            <form onSubmit={handleFileUpload}>
+              {!selectedFile ? (
+                <label style={{ 
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '32px 16px', 
+                  border: '2px dashed #e2e8f0', borderRadius: '12px', cursor: 'pointer'
+                }}>
+                  <input type="file" hidden onChange={(e) => setSelectedFile(e.target.files[0])} />
+                  <Upload size={32} style={{ color: '#2563eb', marginBottom: '12px' }} />
+                  <span style={{ color: '#2563eb', fontWeight: '600', fontSize: '14px' }}>Choose file to upload</span>
+                  <span style={{ color: '#94a3b8', fontSize: '12px', marginTop: '4px' }}>PDF, JPG, PNG up to 10MB</span>
+                </label>
+              ) : (
+                <div style={{ padding: '16px', border: '1px solid #e2e8f0', borderRadius: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+                    <FileText color="#2563eb" />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '14px', fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {selectedFile.name}
+                      </div>
                     </div>
+                    <button onClick={() => setSelectedFile(null)} style={{ color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer' }}>
+                      <X size={18} />
+                    </button>
                   </div>
                   <button 
-                    onClick={() => setAiAnalysis(null)} 
-                    className="text-xs font-bold hover:underline"
-                  >Dismiss</button>
+                    type="submit" 
+                    disabled={uploading}
+                    style={{ 
+                      width: '100%', padding: '10px', backgroundColor: '#2563eb', color: 'white', 
+                      borderRadius: '8px', border: 'none', fontWeight: '600', cursor: 'pointer'
+                    }}
+                  >
+                    {uploading ? 'Uploading...' : 'Import'}
+                  </button>
                 </div>
               )}
-
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <h2 className="text-xl font-bold text-gray-900">{selectedTx.description}</h2>
-                    <p className="text-sm text-gray-500">Ref: {selectedTx.referenceNo} | Ledger: {selectedTx.ledgerName}</p>
-                  </div>
-                  <div className="flex flex-col items-end space-y-2">
-                    <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                      selectedTx.status === 'Approved' ? 'bg-green-100 text-green-700' : 
-                      selectedTx.status === 'Finding Raised' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'
-                    }`}>
-                      {selectedTx.status}
-                    </span>
-                    {selectedTx.bankMatched && (
-                      <span className="flex items-center text-[10px] text-green-600 font-bold bg-green-50 px-2 py-0.5 rounded">
-                        <FiCheckCircle className="mr-1" /> BANK MATCHED
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 py-4 border-t border-gray-100">
-                  <div>
-                    <p className="text-[10px] uppercase text-gray-400 font-semibold mb-1">Project Code</p>
-                    <p className="text-sm font-medium">{selectedTx.projectCode}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] uppercase text-gray-400 font-semibold mb-1">Category</p>
-                    <p className="text-sm font-medium">{selectedTx.categoryName}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] uppercase text-gray-400 font-semibold mb-1">Subcategory</p>
-                    <p className="text-sm font-medium">{selectedTx.subcategory}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] uppercase text-gray-400 font-semibold mb-1">Vendor</p>
-                    <p className="text-sm font-medium">{selectedTx.vendorCustomer}</p>
-                  </div>
-                </div>
-
-                {(selectedTx.validationReason || selectedTx.poNumber) && (
-                  <div className="mt-4 p-3 bg-gray-50 rounded-lg border border-gray-100">
-                    <div className="flex items-start mb-3">
-                      <FiAlertCircle className="text-indigo-500 mt-0.5 mr-2" />
-                      <div>
-                        <p className="text-xs font-bold text-indigo-900">Audit Intelligence</p>
-                        <p className="text-xs text-indigo-700">{selectedTx.validationReason || 'Standard transaction matching rules applied.'}</p>
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-gray-200">
-                      <div>
-                        <p className="text-[9px] text-gray-400 uppercase">PO Number</p>
-                        <p className="text-[11px] font-bold">{selectedTx.poNumber || 'N/A'}</p>
-                      </div>
-                      <div>
-                        <p className="text-[9px] text-gray-400 uppercase">GRN Number</p>
-                        <p className="text-[11px] font-bold">{selectedTx.grnNumber || 'N/A'}</p>
-                      </div>
-                      <div>
-                        <p className="text-[9px] text-gray-400 uppercase">Invoice No</p>
-                        <p className="text-[11px] font-bold">{selectedTx.invoiceNumber || 'N/A'}</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-                <div className="p-4 border-b border-gray-100 flex justify-between items-center">
-                  <div className="flex items-center">
-                    <FiCheckCircle className="mr-2 text-green-500" />
-                    <h2 className="font-semibold text-gray-700">Evidence Checklist</h2>
-                  </div>
-                </div>
-
-                <div className="divide-y divide-gray-50">
-                  {checklistItems.length === 0 ? (
-                    <div className="p-8 text-center text-gray-400">
-                      <FiAlertCircle className="mx-auto text-2xl mb-2" />
-                      <p className="text-sm">No checklist template mapped for this category.</p>
-                    </div>
-                  ) : (
-                    checklistItems.map(item => (
-                      <div key={item.id} className="p-4 flex items-center justify-between hover:bg-gray-50">
-                        <div className="flex items-center space-x-3 overflow-hidden">
-                          {item.provided ? (
-                            <FiCheckCircle className="text-green-500 flex-shrink-0" />
-                          ) : item.mandatory ? (
-                            <FiAlertCircle className="text-amber-500 flex-shrink-0" />
-                          ) : (
-                            <div className="w-5 h-5 rounded-full border-2 border-gray-200 flex-shrink-0" />
-                          )}
-                          <div className="truncate">
-                            <p className="text-sm font-medium text-gray-800">{item.description}</p>
-                            <p className="text-xs text-gray-400">
-                              {item.mandatory && <span className="text-red-400 font-bold ml-1">*Required</span>}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center space-x-2">
-                          {item.provided ? (
-                            <div className="flex items-center bg-green-50 px-3 py-1.5 rounded-lg border border-green-100">
-                              <FiFileText className="text-green-600 mr-2 text-xs" />
-                              <span className="text-[10px] font-medium text-green-700 max-w-[100px] truncate">
-                                {item.documentName || 'Document Linked'}
-                              </span>
-                            </div>
-                          ) : null}
-
-                          <label className={`cursor-pointer flex items-center px-3 py-1.5 rounded-lg transition-colors ${
-                            item.provided ? 'bg-gray-100 text-gray-500 hover:bg-gray-200' : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm'
-                          }`}>
-                            <FiUploadCloud className="mr-2 text-sm" />
-                            <span className="text-xs font-medium">
-                              {uploading === item.id ? '...' : item.provided ? 'Replace' : 'Upload'}
-                            </span>
-                            <input 
-                              type="file" 
-                              className="hidden" 
-                              onChange={(e) => handleFileUpload(item.id, e)}
-                              disabled={uploading === item.id}
-                            />
-                          </label>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
+            </form>
+          </div>
         </div>
       </div>
     </div>
   );
-};
-
-export default Evidence;
+}

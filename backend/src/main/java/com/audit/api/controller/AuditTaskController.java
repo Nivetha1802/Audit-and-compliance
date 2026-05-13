@@ -20,6 +20,26 @@ public class AuditTaskController {
         this.auditTaskService = auditTaskService;
     }
 
+    @PostMapping
+    public AuditTask createTask(@RequestBody Map<String, Object> payload) {
+        String title = (String) payload.get("title");
+        String description = (String) payload.get("description");
+        
+        String assignedToStr = (String) payload.get("assignedTo");
+        UUID assignedTo = (assignedToStr != null && !assignedToStr.trim().isEmpty()) ? UUID.fromString(assignedToStr) : null;
+        
+        String projectIdStr = (String) payload.get("projectId");
+        UUID projectId = (projectIdStr != null && !projectIdStr.trim().isEmpty()) ? UUID.fromString(projectIdStr) : null;
+        
+        String riskIdStr = (String) payload.get("riskId");
+        UUID riskId = (riskIdStr != null && !riskIdStr.trim().isEmpty()) ? UUID.fromString(riskIdStr) : null;
+
+        String transactionIdStr = (String) payload.get("transactionId");
+        UUID transactionId = (transactionIdStr != null && !transactionIdStr.trim().isEmpty()) ? UUID.fromString(transactionIdStr) : null;
+        
+        return auditTaskService.createTask(title, description, assignedTo, projectId, riskId, transactionId);
+    }
+
     @GetMapping
     public List<AuditTask> getAllTasks() {
         return auditTaskService.getAllTasks();

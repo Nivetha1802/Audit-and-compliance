@@ -190,7 +190,7 @@ public class TransactionService {
      * vendor/customer name against registered vendor names and legal names.
      * Exact match wins; otherwise uses Levenshtein similarity ≥ 85%.
      */
-    private void autoLinkVendor(Transaction tx, UUID orgId) {
+    public void autoLinkVendor(Transaction tx, UUID orgId) {
         String importedName = tx.getVendorCustomer();
         if (importedName == null || importedName.isBlank()) return;
 

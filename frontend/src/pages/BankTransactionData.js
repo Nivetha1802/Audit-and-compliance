@@ -34,23 +34,6 @@ import {
   Search
 } from 'lucide-react';
 
-const STATUS_COLORS = {
-  APPROVED:         { bg: '#d1fae5', text: '#065f46' },
-  PENDING_EVIDENCE: { bg: '#fef3c7', text: '#92400e' },
-  UNDER_REVIEW:     { bg: '#dbeafe', text: '#1e40af' },
-  RAISED_FINDING:   { bg: '#fee2e2', text: '#991b1b' },
-  REJECTED:         { bg: '#fce7f3', text: '#9d174d' },
-};
-
-function getCategoryColor(name) {
-  if (!name) return { bg: '#f3f4f6', text: '#6b7280' };
-  const n = name.toLowerCase();
-  if (n.includes('revenue')) return { bg: '#d1fae5', text: '#065f46' };
-  if (n.includes('expense')) return { bg: '#fee2e2', text: '#991b1b' };
-  if (n.includes('wip'))     return { bg: '#fef3c7', text: '#92400e' };
-  return { bg: '#ede9fe', text: '#5b21b6' };
-}
-
 const ADMIN_ROLES = ['ADMIN', 'FINANCE_MANAGER'];
 
 // ── SHARED SIDEBAR ──────────────────────────────────────────────────────────
@@ -78,8 +61,8 @@ function EvidenceSidebar({ transaction, projectId, onClose, onEvidenceUpdate, cu
       
       <div style={{ padding: '20px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <h2 style={{ fontSize: '18px', fontWeight: 'bold', margin: 0 }}>Evidence Workspace</h2>
-          <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>Ref: {transaction.referenceNo || transaction.transactionNumber}</div>
+          <h2 style={{ fontSize: '18px', fontWeight: 'bold', margin: 0 }}>Bank Workspace</h2>
+          <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>Ref: {transaction.referenceNo}</div>
         </div>
         <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}><X size={24} /></button>
       </div>
@@ -109,6 +92,7 @@ function EvidenceSidebar({ transaction, projectId, onClose, onEvidenceUpdate, cu
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
+        {activeTab === 'checklist' && <ChecklistSection transaction={transaction} projectId={projectId} onUpdate={onEvidenceUpdate} />}
         {activeTab === 'vendor' && <VendorLinkingSection transaction={transaction} onUpdate={onEvidenceUpdate} currentUser={currentUser} />}
         {activeTab === 'tasks' && <TaskCreationSection transaction={transaction} projectId={projectId} currentUser={currentUser} />}
         {activeTab === 'risks' && <RiskCreationSection transaction={transaction} projectId={projectId} currentUser={currentUser} />}
@@ -380,8 +364,8 @@ function ProjectsTable({ projects, transactions, onSelect }) {
   return (
     <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
       <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#111827', margin: 0 }}>📄 General Ledger Data</h1>
-        <p style={{ color: '#6b7280', marginTop: '4px' }}>Select a project to view its general ledger transactions.</p>
+        <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#111827', margin: 0 }}>🏦 Bank Transaction Data</h1>
+        <p style={{ color: '#6b7280', marginTop: '4px' }}>Select a project to view its bank statement transactions.</p>
       </div>
 
       <div style={{ backgroundColor: 'white', borderRadius: '12px', border: '1px solid #e5e7eb', overflow: 'hidden' }}>
@@ -392,7 +376,7 @@ function ProjectsTable({ projects, transactions, onSelect }) {
               <th style={thStyle}>Project Name</th>
               <th style={thStyle}>Status</th>
               <th style={thStyle}>Audit Status</th>
-              <th style={thStyle}>Ledger Entries</th>
+              <th style={thStyle}>Bank Entries</th>
             </tr>
           </thead>
           <tbody>
@@ -418,11 +402,13 @@ function ProjectsTable({ projects, transactions, onSelect }) {
   );
 }
 
-function LedgerDetail({ project, onBack, currentUser, onEvidenceUpdate }) {
+function BankDetail({ project, onBack, currentUser, onEvidenceUpdate }) {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedTransaction, setSelectedTransaction] = useState(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [bankFile, setBankFile] = useState(null);
+  const [importing, setImporting] = useState(false);
 
   useEffect(() => { fetchTransactions(); }, [project.id]);
 
@@ -435,16 +421,21 @@ function LedgerDetail({ project, onBack, currentUser, onEvidenceUpdate }) {
     finally { setLoading(false); }
   };
 
-  const handleImport = async (file) => {
-    const fd = new FormData();
-    fd.append('file', file);
-    fd.append('projectId', project.id);
+  const handleImport = async (e) => {
+    e.preventDefault();
+    if (!bankFile) return;
     try {
-      await transactionApi.importCsv(fd);
+      setImporting(true);
+      const fd = new FormData();
+      fd.append('file', bankFile);
+      fd.append('projectId', project.id);
+      await transactionApi.importBankStatement(fd);
+      alert('Import successful');
+      setBankFile(null);
       fetchTransactions();
     } catch (err) { alert('Import failed'); }
+    finally { setImporting(false); }
   };
-
 
   const totals = transactions.reduce((acc, t) => {
     if (t.debitCredit === 'Credit') acc.credit += (t.amount || 0);
@@ -464,22 +455,22 @@ function LedgerDetail({ project, onBack, currentUser, onEvidenceUpdate }) {
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#64748b' }}>
               <span>Projects</span> <ChevronRight size={14} /> <span>{project.name}</span>
             </div>
-            <h1 style={{ fontSize: '20px', fontWeight: '700', color: '#111827', margin: 0 }}>📄 General Ledger Data</h1>
+            <h1 style={{ fontSize: '20px', fontWeight: '700', color: '#111827', margin: 0 }}>🏦 Bank Transaction Data</h1>
           </div>
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
-          <input type="file" id="ledger-csv" accept=".csv" hidden
-            onChange={e => { if(e.target.files[0]) { handleImport(e.target.files[0]); e.target.value=''; } }}
-          />
-          <label htmlFor="ledger-csv" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '8px', border: '1px solid #2563eb', color: '#2563eb', cursor: 'pointer', fontSize: '13px', fontWeight: '600', backgroundColor: 'white' }}>
-            <Upload size={16} /> Choose File
-          </label>
-          <button onClick={() => document.getElementById('ledger-csv').click()}
-            style={{ marginLeft: '8px', padding: '8px 16px', borderRadius: '8px', backgroundColor: '#2563eb', color: 'white', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Upload size={16} /> Import Ledger
-          </button>
+        <div style={{ backgroundColor: 'white', borderRadius: '12px', padding: '20px', border: '1px solid #e5e7eb', marginBottom: '24px' }}>
+           <form onSubmit={handleImport} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <input type="file" id="bankFile" style={{ display: 'none' }} onChange={e => setBankFile(e.target.files[0])} />
+              <button type="button" onClick={() => document.getElementById('bankFile').click()} style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid #e5e7eb', background: 'white', cursor: 'pointer' }}>
+                {bankFile ? bankFile.name : 'Choose Bank Statement'}
+              </button>
+              <button type="submit" disabled={importing || !bankFile} style={{ padding: '8px 16px', borderRadius: '6px', background: '#2563eb', color: 'white', border: 'none', cursor: 'pointer', opacity: importing ? 0.7 : 1 }}>
+                {importing ? 'Importing...' : 'Import Statement'}
+              </button>
+           </form>
         </div>
+
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px' }}>
           {[
             { label: 'Total Entries', value: transactions.length, color: '#2563eb', bg: '#eff6ff' },
@@ -498,12 +489,10 @@ function LedgerDetail({ project, onBack, currentUser, onEvidenceUpdate }) {
             <thead>
               <tr>
                 <th style={thStyle}>Date</th>
-                <th style={thStyle}>Txn No.</th>
+                <th style={thStyle}>Ref No.</th>
                 <th style={thStyle}>Description</th>
-                <th style={thStyle}>Ledger</th>
                 <th style={thStyle}>D/C</th>
                 <th style={thStyle}>Amount</th>
-                <th style={thStyle}>Category</th>
                 <th style={thStyle}>Status</th>
               </tr>
             </thead>
@@ -511,19 +500,13 @@ function LedgerDetail({ project, onBack, currentUser, onEvidenceUpdate }) {
               {transactions.map(tx => (
                 <tr key={tx.id} style={{ backgroundColor: selectedTransaction?.id === tx.id ? '#f0f7ff' : 'transparent' }}>
                   <td style={tdStyle}>{tx.transactionDate}</td>
-                  <td style={tdStyle}><code style={{ fontSize: '11px', backgroundColor: '#f3f4f6', padding: '2px 4px', borderRadius: '4px' }}>{tx.transactionNumber}</code></td>
+                  <td style={tdStyle}><code style={{ fontSize: '11px', backgroundColor: '#f3f4f6', padding: '2px 4px', borderRadius: '4px' }}>{tx.referenceNo}</code></td>
                   <td style={tdStyle}>{tx.description}</td>
-                  <td style={tdStyle}>{tx.ledgerName}</td>
                   <td style={tdStyle}>{tx.debitCredit}</td>
                   <td style={tdStyle}>₹{tx.amount?.toLocaleString()}</td>
                   <td style={tdStyle}>
-                    <span style={{ padding: '2px 8px', borderRadius: '999px', fontSize: '11px', fontWeight: '500', ...getCategoryColor(tx.categoryName) }}>
-                      {tx.categoryName}
-                    </span>
-                  </td>
-                  <td style={tdStyle}>
-                    <span style={{ padding: '2px 8px', borderRadius: '999px', fontSize: '11px', fontWeight: '500', ...(STATUS_COLORS[tx.status] || { bg: '#f3f4f6', text: '#374151' }) }}>
-                      {tx.status}
+                    <span style={{ padding: '2px 8px', borderRadius: '999px', fontSize: '11px', fontWeight: '500', backgroundColor: tx.bankMatched ? '#d1fae5' : '#fee2e2', color: tx.bankMatched ? '#065f46' : '#991b1b' }}>
+                      {tx.bankMatched ? 'Matched' : 'Unmatched'}
                     </span>
                   </td>
                 </tr>
@@ -546,7 +529,7 @@ function LedgerDetail({ project, onBack, currentUser, onEvidenceUpdate }) {
   );
 }
 
-export default function GeneralLedger() {
+export default function BankTransactionData() {
   const { user: currentUser } = useAuth();
   const [projects, setProjects] = useState([]);
   const [allTransactions, setAllTransactions] = useState([]);
@@ -563,7 +546,7 @@ export default function GeneralLedger() {
   };
 
   if (selectedProject) {
-    return <LedgerDetail project={selectedProject} onBack={() => setSelectedProject(null)} currentUser={currentUser} onEvidenceUpdate={fetchData} />;
+    return <BankDetail project={selectedProject} onBack={() => setSelectedProject(null)} currentUser={currentUser} onEvidenceUpdate={fetchData} />;
   }
 
   return <ProjectsTable projects={projects} transactions={allTransactions} onSelect={setSelectedProject} />;

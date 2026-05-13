@@ -5,6 +5,7 @@ import com.audit.api.entity.Risk;
 import com.audit.api.entity.User;
 import com.audit.api.entity.TaskComment;
 import com.audit.api.repository.AuditTaskRepository;
+import com.audit.api.repository.ProjectRepository;
 import com.audit.api.repository.RiskRepository;
 import com.audit.api.repository.UserRepository;
 import com.audit.api.repository.TaskCommentRepository;
@@ -20,6 +21,7 @@ import java.util.UUID;
 public class AuditTaskService {
 
     private final AuditTaskRepository auditTaskRepository;
+    private final ProjectRepository projectRepository;
     private final RiskRepository riskRepository;
     private final UserRepository userRepository;
     private final TaskCommentRepository taskCommentRepository;
@@ -28,12 +30,14 @@ public class AuditTaskService {
 
     public AuditTaskService(
             AuditTaskRepository auditTaskRepository,
+            ProjectRepository projectRepository,
             RiskRepository riskRepository,
             UserRepository userRepository,
             TaskCommentRepository taskCommentRepository,
             SecurityUtils securityUtils,
             EmailService emailService) {
         this.auditTaskRepository = auditTaskRepository;
+        this.projectRepository = projectRepository;
         this.riskRepository = riskRepository;
         this.userRepository = userRepository;
         this.taskCommentRepository = taskCommentRepository;
@@ -45,19 +49,54 @@ public class AuditTaskService {
         return auditTaskRepository.findAll();
     }
 
-    public AuditTask createTask(String title, String description, UUID assignedTo, UUID projectId, UUID riskId) {
-        User user = securityUtils.getCurrentUser();
+    /**
+     * Resolve organizationId: prefer current user's org, fallback to project's org.
+     */
+    private UUID resolveOrganizationId(UUID projectId) {
+        try {
+            User user = securityUtils.getCurrentUser();
+            if (user != null && user.getOrganizationId() != null) {
+                return user.getOrganizationId();
+            }
+        } catch (Exception e) {
+            System.out.println("DEBUG: Could not get current user org, falling back to project org");
+        }
+        // Fallback: use project's organizationId
+        if (projectId != null) {
+            return projectRepository.findById(projectId)
+                    .map(p -> p.getOrganizationId())
+                    .orElse(null);
+        }
+        return null;
+    }
+
+    public AuditTask createTask(String title, String description, UUID assignedTo, UUID projectId, UUID riskId, UUID transactionId) {
+        UUID organizationId = resolveOrganizationId(projectId);
+
+        System.out.println("DEBUG createTask: title=" + title
+                + " projectId=" + projectId
+                + " assignedTo=" + assignedTo
+                + " orgId=" + organizationId);
+
+        if (organizationId == null) {
+            throw new RuntimeException("Cannot determine organization for task. Please ensure you are logged in and a valid project is selected.");
+        }
+
         AuditTask task = AuditTask.builder()
                 .title(title)
                 .description(description)
                 .assignedTo(assignedTo)
                 .projectId(projectId)
                 .riskId(riskId)
+                .transactionId(transactionId)
                 .status("PENDING")
                 .priority("MEDIUM")
-                .organizationId(user != null ? user.getOrganizationId() : null)
+                .organizationId(organizationId)
                 .build();
-        return auditTaskRepository.save(task);
+
+        AuditTask saved = auditTaskRepository.save(task);
+        System.out.println("DEBUG createTask: saved with id=" + saved.getId());
+        return saved;
     }
 
     @Transactional
@@ -66,9 +105,11 @@ public class AuditTaskService {
                 .orElseThrow(() -> new RuntimeException("Task not found"));
 
         User currentUser = securityUtils.getCurrentUser();
-        
-        // Strict permission check
-        if (!currentUser.getId().equals(task.getAssignedTo())) {
+
+        boolean isAssigned = currentUser.getId().equals(task.getAssignedTo());
+        boolean isAdmin = "ADMIN".equals(currentUser.getRole() != null ? currentUser.getRole().name() : "");
+
+        if (!isAssigned && !isAdmin) {
             throw new RuntimeException("Only the assigned user can modify this task's status.");
         }
 
@@ -80,12 +121,11 @@ public class AuditTaskService {
 
         System.out.println("DEBUG: Task " + id + " status updated from " + oldStatus + " to " + status);
 
-        // Notify risk creator about status change
-        notifyRiskCreator(savedTask, "Status Update: " + status, 
-            String.format("The status of the task '%s' has been changed from %s to %s.", 
-            task.getTitle(), oldStatus, status));
+        notifyRiskCreator(savedTask, "Status Update: " + status,
+                String.format("The status of the task '%s' has been changed from %s to %s.",
+                        task.getTitle(), oldStatus, status));
 
-        if ("COMPLETED".equals(status) && !"COMPLETED".equals(oldStatus)) {
+        if ("COMPLETED".equals(status) && !("COMPLETED".equals(oldStatus))) {
             if (task.getRiskId() != null) {
                 riskRepository.findById(task.getRiskId()).ifPresent(risk -> {
                     risk.setStatus("CLOSED");
@@ -99,41 +139,25 @@ public class AuditTaskService {
     }
 
     private void notifyRiskCreator(AuditTask task, String actionLabel, String detailMessage) {
-        if (task.getRiskId() == null) {
-            System.out.println("DEBUG: Task has no riskId, skipping notification");
-            return;
-        }
+        if (task.getRiskId() == null) return;
 
         riskRepository.findById(task.getRiskId()).ifPresent(risk -> {
             if (risk.getRiskCreatorId() != null) {
                 userRepository.findById(risk.getRiskCreatorId()).ifPresent(creator -> {
                     String subject = "Audit Alert: " + risk.getTitle() + " [" + actionLabel + "]";
                     String body = String.format(
-                        "Hello %s,\n\nThere has been an update on a task associated with a risk you raised.\n\n" +
-                        "--- ACTION ---\n" +
-                        "%s\n\n" +
-                        "--- RISK DETAILS ---\n" +
-                        "Title: %s\n" +
-                        "Current Status: %s\n\n" +
-                        "--- TASK DETAILS ---\n" +
-                        "Task: %s\n" +
-                        "Current Status: %s\n" +
-                        "Updated By: %s\n\n" +
-                        "You are receiving this because you are the creator of this risk.",
-                        creator.getFullName(),
-                        detailMessage,
-                        risk.getTitle(),
-                        risk.getStatus(),
-                        task.getTitle(),
-                        task.getStatus(),
-                        securityUtils.getCurrentUser().getFullName()
-                    );
-                    
+                            "Hello %s,\n\nThere has been an update on a task associated with a risk you raised.\n\n"
+                            + "--- ACTION ---\n%s\n\n"
+                            + "--- RISK DETAILS ---\nTitle: %s\nCurrent Status: %s\n\n"
+                            + "--- TASK DETAILS ---\nTask: %s\nCurrent Status: %s\n\n"
+                            + "You are receiving this because you are the creator of this risk.",
+                            creator.getFullName(), detailMessage,
+                            risk.getTitle(), risk.getStatus(),
+                            task.getTitle(), task.getStatus());
+
                     System.out.println("DEBUG: Sending email to risk creator: " + creator.getEmail());
                     emailService.sendEmail(creator.getEmail(), subject, body);
                 });
-            } else {
-                System.out.println("DEBUG: Risk has no creatorId, skipping email");
             }
         });
     }
@@ -147,20 +171,28 @@ public class AuditTaskService {
         User user = securityUtils.getCurrentUser();
         System.out.println("DEBUG: Adding comment to task " + taskId + " by " + user.getFullName());
 
+        // Find task to get organizationId
+        AuditTask task = auditTaskRepository.findById(taskId)
+                .orElseThrow(() -> new RuntimeException("Task not found"));
+
+        UUID organizationId = user.getOrganizationId() != null
+                ? user.getOrganizationId()
+                : task.getOrganizationId();
+
         TaskComment comment = TaskComment.builder()
                 .taskId(taskId)
                 .userId(user.getId())
                 .userName(user.getFullName())
                 .comment(commentText)
                 .createdAt(LocalDateTime.now())
-                .organizationId(user.getOrganizationId())
+                .organizationId(organizationId)
                 .build();
+
         TaskComment savedComment = taskCommentRepository.save(comment);
 
-        // Notify risk creator about new comment
-        auditTaskRepository.findById(taskId).ifPresent(task -> {
-            notifyRiskCreator(task, "New Comment Added", 
-                String.format("%s added a comment: \"%s\"", user.getFullName(), commentText));
+        auditTaskRepository.findById(taskId).ifPresent(t -> {
+            notifyRiskCreator(t, "New Comment Added",
+                    String.format("%s added a comment: \"%s\"", user.getFullName(), commentText));
         });
 
         return savedComment;

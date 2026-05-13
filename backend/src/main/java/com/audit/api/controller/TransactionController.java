@@ -74,4 +74,14 @@ public class TransactionController {
             @RequestParam(required = false) UUID vendorId) {
         return ResponseEntity.ok(transactionService.linkVendor(id, vendorId));
     }
+
+    @PostMapping("/{id}/auto-link-vendor")
+    public ResponseEntity<Transaction> autoLinkVendor(@PathVariable UUID id) {
+        Transaction tx = transactionService.getAllTransactions().stream()
+                .filter(t -> t.getId().equals(id))
+                .findFirst()
+                .orElseThrow(() -> new RuntimeException("Transaction not found"));
+        transactionService.autoLinkVendor(tx, tx.getOrganizationId());
+        return ResponseEntity.ok(transactionService.linkVendor(tx.getId(), tx.getVendorId()));
+    }
 }

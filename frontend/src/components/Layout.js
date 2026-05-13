@@ -21,8 +21,9 @@ const NAV_GROUPS = [
     items: [
       { to: '/projects',           icon: '📁', label: 'Projects' },
       { to: '/general-ledger',     icon: '📄', label: 'General Ledger Data' },
+      { to: '/bank-transactions',  icon: '🏦', label: 'Bank Transaction Data' },
       { to: '/evidence-management',icon: '🗂', label: 'Evidence Management' },
-      { to: '/audit-analysis',     icon: '🔬', label: 'Conduct Audit Analysis' },
+      { to: '/analysis',           icon: '🔬', label: 'Conduct Audit Analysis' },
       { to: '/risks',              icon: '⚠️', label: 'Risks' },
       { to: '/tasks',              icon: '✅', label: 'Tasks' },
     ],
@@ -31,7 +32,6 @@ const NAV_GROUPS = [
     label: 'CONFIGURATION',
     items: [
       { to: '/evidence-checklist', icon: '📋', label: 'Evidence Checklists' },
-      // { to: '/ai-validation',       icon: '🤖', label: 'AI Analysis' },
       { to: '/vendors',             icon: '🏢', label: 'Vendors' },
     ],
   },
@@ -47,8 +47,7 @@ export default function Layout({ children }) {
 
   const isActive = (to) => to === '/' ? location.pathname === '/' : location.pathname.startsWith(to);
 
-  const initials = user?.name
-    ? user.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+  const initials = user?.name ? user.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
     : (user?.fullName ? user.fullName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : '??');
 
   return (
