@@ -23,7 +23,7 @@ const NAV_GROUPS = [
       { to: '/general-ledger',     icon: '📄', label: 'General Ledger Data' },
       { to: '/evidence-management',icon: '🗂', label: 'Evidence Management' },
       { to: '/audit-analysis',     icon: '🔬', label: 'Conduct Audit Analysis' },
-      { to: '/findings',           icon: '⚠️', label: 'Findings' },
+      { to: '/risks',              icon: '⚠️', label: 'Risks' },
       { to: '/tasks',              icon: '✅', label: 'Tasks' },
     ],
   },
@@ -47,9 +47,9 @@ export default function Layout({ children }) {
 
   const isActive = (to) => to === '/' ? location.pathname === '/' : location.pathname.startsWith(to);
 
-  const initials = user?.fullName
-    ? user.fullName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
-    : 'U';
+  const initials = user?.name
+    ? user.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+    : (user?.fullName ? user.fullName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : '??');
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#f1f5f9' }}>
@@ -140,7 +140,7 @@ export default function Layout({ children }) {
           </div>
           {!collapsed && (
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: '0.75rem', fontWeight: '600', color: '#e2e8f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.fullName || 'User'}</div>
+              <div style={{ fontSize: '0.75rem', fontWeight: '600', color: '#e2e8f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.name || user?.fullName || 'User'}</div>
               <div style={{ fontSize: '0.65rem', color: '#64748b' }}>{user?.role}</div>
             </div>
           )}
@@ -184,7 +184,7 @@ export default function Layout({ children }) {
                 {initials}
               </div>
               <div>
-                <div style={{ fontSize: '0.8rem', fontWeight: '600', color: '#111827' }}>{user?.fullName || 'User'}</div>
+                <div style={{ fontSize: '0.8rem', fontWeight: '600', color: '#111827' }}>{user?.name || user?.fullName || 'User'}</div>
                 <div style={{ fontSize: '0.65rem', color: '#6b7280' }}>{user?.role}</div>
               </div>
             </div>

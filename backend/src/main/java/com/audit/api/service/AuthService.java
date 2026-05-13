@@ -91,7 +91,7 @@ public class AuthService {
                 .organizationId(organization.getId())
                 .active(true)
                 .build();
-        userRepository.save(user);
+        user = userRepository.save(user);
 
         Map<String, Object> extraClaims = new HashMap<>();
         extraClaims.put("organizationId", organization.getId());
@@ -113,8 +113,10 @@ public class AuthService {
                 .organizationId(organization.getId())
                 .role(user.getRole().name())
                 .fullName(user.getFullName())
+                .email(user.getEmail())
                 .organizationName(organization.getName())
                 .setupRequired(setupRequired)
+                .id(user.getId())
                 .build();
     }
 
@@ -150,8 +152,10 @@ public class AuthService {
                 .organizationId(user.getOrganizationId())
                 .role(user.getRole().name())
                 .fullName(user.getFullName())
+                .email(user.getEmail())
                 .organizationName(organization.getName())
                 .setupRequired(setupRequired)
+                .id(user.getId())
                 .build();
     }
 
@@ -189,8 +193,10 @@ public class AuthService {
                 .organizationId(user.getOrganizationId())
                 .role(user.getRole().name())
                 .fullName(user.getFullName())
+                .email(user.getEmail())
                 .organizationName(organization.getName())
                 .setupRequired(setupRequired)
+                .id(user.getId())
                 .build();
     }
 }

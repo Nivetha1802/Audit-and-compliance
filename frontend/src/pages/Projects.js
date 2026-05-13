@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Edit, ClipboardCheck, Calendar, DollarSign, Target, X } from 'lucide-react';
+import { Edit, Calendar, DollarSign, Target, X } from 'lucide-react';
 import { projectApi, userApi } from '../services/api';
 
 const STATUS_COLORS = {
@@ -16,12 +16,6 @@ const AUDIT_STATUS_COLORS = {
   UNDER_REVIEW: { bg: '#dbeafe', text: '#1e40af' },
   SIGNED_OFF:   { bg: '#d1fae5', text: '#065f46' },
   CLOSED:       { bg: '#e5e7eb', text: '#6b7280' },
-};
-
-const AUDIT_TRANSITIONS = {
-  DRAFT:        'IN_PROGRESS',
-  IN_PROGRESS:  'UNDER_REVIEW',
-  UNDER_REVIEW: 'SIGNED_OFF',
 };
 
 const RISK_COLORS = {
@@ -45,11 +39,6 @@ export default function Projects() {
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
-  const [auditPanel, setAuditPanel] = useState(null);
-  const [auditDates, setAuditDates] = useState({ auditPeriodStart: '', auditPeriodEnd: '', auditDeadline: '' });
-  const [signOffNotes, setSignOffNotes] = useState('');
-  const [readiness, setReadiness] = useState(null);
-  const [auditWorking, setAuditWorking] = useState(false);
 
   useEffect(() => { fetchData(); }, []);
 
@@ -113,48 +102,6 @@ export default function Projects() {
     }
   };
 
-  const openAuditPanel = async (p) => {
-    setAuditPanel(p);
-    setAuditDates({
-      auditPeriodStart: p.auditPeriodStart || '',
-      auditPeriodEnd: p.auditPeriodEnd || '',
-      auditDeadline: p.auditDeadline || '',
-    });
-    setSignOffNotes('');
-    setReadiness(null);
-    try {
-      const res = await projectApi.getReadiness(p.id);
-      setReadiness(res.data);
-    } catch { /* readiness optional */ }
-  };
-
-  const handleAdvanceAudit = async () => {
-    if (!auditPanel) return;
-    setAuditWorking(true);
-    try {
-      const nextStatus = AUDIT_TRANSITIONS[auditPanel.auditStatus || 'DRAFT'];
-      if (!nextStatus) return;
-      await projectApi.advanceAudit(auditPanel.id, { targetStatus: nextStatus, ...auditDates });
-      setAuditPanel(null);
-      fetchData();
-    } catch (err) {
-      alert(err.response?.data?.message || 'Failed to advance audit status');
-    } finally { setAuditWorking(false); }
-  };
-
-  const handleSignOff = async () => {
-    if (!auditPanel) return;
-    if (!window.confirm('Sign off this project? This will lock it and cannot be undone.')) return;
-    setAuditWorking(true);
-    try {
-      await projectApi.signOff(auditPanel.id, { notes: signOffNotes });
-      setAuditPanel(null);
-      fetchData();
-    } catch (err) {
-      alert(err.response?.data?.message || 'Sign-off failed');
-    } finally { setAuditWorking(false); }
-  };
-
   const inputStyle = { width: '100%', padding: '0.6rem', border: '1px solid #d1d5db', borderRadius: '0.375rem', boxSizing: 'border-box' };
   const labelStyle = { display: 'block', marginBottom: '0.375rem', fontWeight: '500', fontSize: '0.875rem', color: '#374151' };
 
@@ -212,14 +159,18 @@ export default function Projects() {
                 <label style={labelStyle}>Project Owner *</label>
                 <select value={form.projectOwnerId} onChange={e => setForm({ ...form, projectOwnerId: e.target.value })} style={inputStyle} required>
                   <option value="">Select Owner</option>
-                  {users.map(u => <option key={u.id} value={u.id}>{u.fullName}</option>)}
+                  {users.filter(u => ['ADMIN', 'FINANCE_MANAGER'].includes(String(u.role || '').toUpperCase())).map(u => (
+                    <option key={u.id} value={u.id}>{u.fullName}</option>
+                  ))}
                 </select>
               </div>
               <div>
                 <label style={labelStyle}>Auditor *</label>
                 <select value={form.auditorId} onChange={e => setForm({ ...form, auditorId: e.target.value })} style={inputStyle} required>
                   <option value="">Select Auditor</option>
-                  {users.filter(u => ['AUDITOR', 'ADMIN'].includes(String(u.role || '').toUpperCase())).map(u => <option key={u.id} value={u.id}>{u.fullName}</option>)}
+                  {users.filter(u => ['AUDITOR', 'ADMIN'].includes(String(u.role || '').toUpperCase())).map(u => (
+                    <option key={u.id} value={u.id}>{u.fullName}</option>
+                  ))}
                 </select>
               </div>
               <div style={{ gridColumn: 'span 2', marginTop: '1.5rem', display: 'flex', gap: '1rem' }}>
@@ -296,10 +247,6 @@ export default function Projects() {
                         style={{ padding: '0.5rem', backgroundColor: 'white', border: '1px solid #d1d5db', borderRadius: '0.5rem', cursor: 'pointer', color: '#4b5563', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}>
                         <Edit size={18} />
                       </button>
-                      <button onClick={() => openAuditPanel(p)} title="Audit Lifecycle"
-                        style={{ padding: '0.5rem', backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '0.5rem', cursor: 'pointer', color: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}>
-                        <ClipboardCheck size={18} />
-                      </button>
                     </div>
                   </td>
                 </tr>
@@ -316,84 +263,6 @@ export default function Projects() {
           </tbody>
         </table>
       </div>
-
-      {/* ── Audit Lifecycle Panel (Modal) ── */}
-      {auditPanel && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
-          <div style={{ backgroundColor: 'white', borderRadius: '1rem', padding: '2rem', width: '560px', maxWidth: '100%', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', position: 'relative' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#111827' }}>Audit Lifecycle</h3>
-                <p style={{ margin: '0.25rem 0 0', fontSize: '0.875rem', color: '#6b7280' }}>Project: <strong>{auditPanel.name}</strong></p>
-              </div>
-              <button onClick={() => setAuditPanel(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#9ca3af' }}><X size={20} /></button>
-            </div>
-
-            {readiness && (
-              <div style={{ padding: '1rem', backgroundColor: '#f9fafb', borderRadius: '0.75rem', marginBottom: '1.5rem' }}>
-                <div style={{ fontWeight: '600', fontSize: '0.875rem', marginBottom: '0.75rem', color: '#374151' }}>Pre-Audit Readiness</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', fontSize: '0.8125rem' }}>
-                  <div style={{ color: '#6b7280' }}>Approved Txs: <span style={{ color: '#111827', fontWeight: '600' }}>{readiness.approvedTransactions}/{readiness.totalTransactions}</span></div>
-                  <div style={{ color: '#6b7280' }}>Pending Evidence: <span style={{ color: '#111827', fontWeight: '600' }}>{readiness.pendingEvidenceTransactions}</span></div>
-                  <div style={{ color: '#6b7280' }}>Open Findings: <span style={{ color: readiness.openFindings > 0 ? '#dc2626' : '#059669', fontWeight: '600' }}>{readiness.openFindings}</span></div>
-                  <div style={{ color: '#6b7280' }}>Critical Risks: <span style={{ color: readiness.openCriticalFindings > 0 ? '#dc2626' : '#059669', fontWeight: '600' }}>{readiness.openCriticalFindings}</span></div>
-                </div>
-                <div style={{ marginTop: '1rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '0.375rem' }}>
-                    <span style={{ fontWeight: '600', color: '#374151' }}>Readiness Score</span>
-                    <span style={{ fontWeight: '700', color: '#2563eb' }}>{readiness.readinessPct}%</span>
-                  </div>
-                  <div style={{ height: '8px', backgroundColor: '#e5e7eb', borderRadius: '4px', overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${readiness.readinessPct}%`, backgroundColor: '#2563eb', transition: 'width 0.5s ease-out' }} />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {!auditPanel.locked && AUDIT_TRANSITIONS[auditPanel.auditStatus || 'DRAFT'] && (
-              <div style={{ marginBottom: '1.5rem' }}>
-                <label style={{ ...labelStyle, fontSize: '0.8125rem' }}>Advance to <strong>{AUDIT_TRANSITIONS[auditPanel.auditStatus || 'DRAFT']}</strong></label>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '0.75rem' }}>
-                  <div>
-                    <label style={{ ...labelStyle, fontSize: '0.75rem' }}>Period Start</label>
-                    <input type="date" value={auditDates.auditPeriodStart} onChange={e => setAuditDates({ ...auditDates, auditPeriodStart: e.target.value })} style={{ ...inputStyle, padding: '0.4rem' }} />
-                  </div>
-                  <div>
-                    <label style={{ ...labelStyle, fontSize: '0.75rem' }}>Period End</label>
-                    <input type="date" value={auditDates.auditPeriodEnd} onChange={e => setAuditDates({ ...auditDates, auditPeriodEnd: e.target.value })} style={{ ...inputStyle, padding: '0.4rem' }} />
-                  </div>
-                  <div style={{ gridColumn: 'span 2' }}>
-                    <label style={{ ...labelStyle, fontSize: '0.75rem' }}>Submission Deadline</label>
-                    <input type="date" value={auditDates.auditDeadline} onChange={e => setAuditDates({ ...auditDates, auditDeadline: e.target.value })} style={{ ...inputStyle, padding: '0.4rem' }} />
-                  </div>
-                </div>
-                <button onClick={handleAdvanceAudit} disabled={auditWorking}
-                  style={{ width: '100%', marginTop: '1.25rem', padding: '0.75rem', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '0.5rem', fontWeight: '600', cursor: 'pointer', opacity: auditWorking ? 0.7 : 1 }}>
-                  {auditWorking ? 'Processing...' : `Advance Audit to ${AUDIT_TRANSITIONS[auditPanel.auditStatus || 'DRAFT']}`}
-                </button>
-              </div>
-            )}
-
-            {auditPanel.auditStatus === 'UNDER_REVIEW' && !auditPanel.locked && (
-              <div style={{ borderTop: '1px solid #f3f4f6', paddingTop: '1.5rem' }}>
-                <label style={labelStyle}>Final Sign-off Notes</label>
-                <textarea value={signOffNotes} onChange={e => setSignOffNotes(e.target.value)} placeholder="Summary of audit results..."
-                  style={{ ...inputStyle, minHeight: '80px', fontFamily: 'inherit', resize: 'vertical' }} />
-                <button onClick={handleSignOff} disabled={auditWorking}
-                  style={{ width: '100%', marginTop: '1rem', padding: '0.75rem', backgroundColor: '#059669', color: 'white', border: 'none', borderRadius: '0.5rem', fontWeight: '600', cursor: 'pointer', opacity: auditWorking ? 0.7 : 1 }}>
-                  {auditWorking ? 'Signing off...' : 'Complete Final Sign-off'}
-                </button>
-              </div>
-            )}
-
-            {auditPanel.locked && (
-              <div style={{ padding: '1rem', backgroundColor: '#fef2f2', borderRadius: '0.75rem', border: '1px solid #fee2e2', textAlign: 'center' }}>
-                <p style={{ margin: 0, fontSize: '0.875rem', color: '#b91c1c', fontWeight: '600' }}>This project is locked and signed off.</p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

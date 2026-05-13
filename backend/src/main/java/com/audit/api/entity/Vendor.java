@@ -39,7 +39,7 @@ public class Vendor extends BaseEntity {
     private Boolean isGstVerified = false;
     private String riskLevel = "LOW";
     
-    private double identityMatchScore;
+    private Double identityMatchScore = 0.0;
     private String identityStatus;
 
     public Vendor() {}
@@ -79,8 +79,8 @@ public class Vendor extends BaseEntity {
     public Boolean getIsGstVerified() { return isGstVerified; }
     public void setIsGstVerified(Boolean isGstVerified) { this.isGstVerified = isGstVerified; }
 
-    public double getIdentityMatchScore() { return identityMatchScore; }
-    public void setIdentityMatchScore(double identityMatchScore) { this.identityMatchScore = identityMatchScore; }
+    public Double getIdentityMatchScore() { return identityMatchScore != null ? identityMatchScore : 0.0; }
+    public void setIdentityMatchScore(Double identityMatchScore) { this.identityMatchScore = identityMatchScore; }
     public String getIdentityStatus() { return identityStatus; }
     public void setIdentityStatus(String identityStatus) { this.identityStatus = identityStatus; }
 }

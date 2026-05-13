@@ -66,7 +66,7 @@ public class Project extends BaseEntity {
     private String signOffNotes;
 
     @Column(name = "is_locked")
-    private boolean locked = false;
+    private Boolean locked = false;
 
     private Double complianceScore = 0.0;
     private String riskStatus;
@@ -101,11 +101,6 @@ public class Project extends BaseEntity {
     public String getAuditStatus() { return auditStatus; }
     public void setAuditStatus(String auditStatus) { this.auditStatus = auditStatus; }
     public LocalDate getAuditPeriodStart() { return auditPeriodStart; }
-    public Double getComplianceScore() { return complianceScore; }
-    public void setComplianceScore(Double complianceScore) { this.complianceScore = complianceScore; }
-    public String getRiskStatus() { return riskStatus; }
-    public void setRiskStatus(String riskStatus) { this.riskStatus = riskStatus; }
-
     public void setAuditPeriodStart(LocalDate auditPeriodStart) { this.auditPeriodStart = auditPeriodStart; }
     public LocalDate getAuditPeriodEnd() { return auditPeriodEnd; }
     public void setAuditPeriodEnd(LocalDate auditPeriodEnd) { this.auditPeriodEnd = auditPeriodEnd; }
@@ -117,6 +112,10 @@ public class Project extends BaseEntity {
     public void setSignedOffAt(java.time.LocalDateTime signedOffAt) { this.signedOffAt = signedOffAt; }
     public String getSignOffNotes() { return signOffNotes; }
     public void setSignOffNotes(String signOffNotes) { this.signOffNotes = signOffNotes; }
-    public boolean isLocked() { return locked; }
-    public void setLocked(boolean locked) { this.locked = locked; }
+    public Double getComplianceScore() { return complianceScore; }
+    public void setComplianceScore(Double complianceScore) { this.complianceScore = complianceScore; }
+    public String getRiskStatus() { return riskStatus; }
+    public void setRiskStatus(String riskStatus) { this.riskStatus = riskStatus; }
+    public Boolean isLocked() { return locked != null && locked; }
+    public void setLocked(Boolean locked) { this.locked = locked; }
 }

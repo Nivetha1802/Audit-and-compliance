@@ -29,7 +29,7 @@ public class AiAnalysisService {
     private String aiServiceUrl;
 
     private final ProjectRepository projectRepository;
-    private final FindingRepository findingRepository;
+    private final RiskRepository riskRepository;
     private final AiAnalysisResultRepository resultRepository;
     private final TransactionRepository transactionRepository;
     private final DocumentRepository documentRepository;
@@ -46,7 +46,7 @@ public class AiAnalysisService {
                               ChecklistRepository checklistRepository,
                               ChecklistItemRepository checklistItemRepository,
                               ProjectRepository projectRepository,
-                              FindingRepository findingRepository,
+                              RiskRepository riskRepository,
                               SecurityUtils securityUtils) {
         this.resultRepository = resultRepository;
         this.transactionRepository = transactionRepository;
@@ -54,7 +54,7 @@ public class AiAnalysisService {
         this.checklistRepository = checklistRepository;
         this.checklistItemRepository = checklistItemRepository;
         this.projectRepository = projectRepository;
-        this.findingRepository = findingRepository;
+        this.riskRepository = riskRepository;
         this.securityUtils = securityUtils;
     }
 
@@ -64,11 +64,6 @@ public class AiAnalysisService {
      * Finds PO, GRN, and Invoice documents from the transaction's checklist items
      * (matched by description keywords), extracts amounts using Gemini, then runs
      * the three-way match comparison.
-     *
-     * Checklist item descriptions must contain keywords:
-     *   PO:      "purchase order", "po"
-     *   GRN:     "grn", "goods receipt", "delivery note"
-     *   Invoice: "invoice", "bill"
      */
     @Transactional
     public AiAnalysisResult runThreeWayMatchFromDocuments(UUID transactionId) {
@@ -403,17 +398,17 @@ public class AiAnalysisService {
                 .orElseThrow(() -> new RuntimeException("Project not found"));
 
         List<Transaction> transactions = transactionRepository.findByOrganizationIdAndProjectId(orgId, projectId);
-        List<Finding> allFindings = findingRepository.findByOrganizationId(orgId);
-        List<Finding> findings = allFindings.stream()
-                .filter(f -> transactions.stream().anyMatch(t -> t.getId().equals(f.getTransactionId())))
+        List<Risk> allRisks = riskRepository.findByOrganizationId(orgId);
+        List<Risk> risks = allRisks.stream()
+                .filter(r -> transactions.stream().anyMatch(t -> t.getId().equals(r.getTransactionId())))
                 .toList();
 
         long total    = transactions.size();
         long approved = transactions.stream().filter(t -> "APPROVED".equals(t.getStatus())).count();
         long pending  = transactions.stream().filter(t -> "PENDING_EVIDENCE".equals(t.getStatus())).count();
-        long openFindings    = findings.stream().filter(f -> !"CLOSED".equals(f.getStatus())).count();
-        long criticalFindings = findings.stream().filter(f -> "CRITICAL".equals(f.getSeverity()) && !"CLOSED".equals(f.getStatus())).count();
-        long highFindings    = findings.stream().filter(f -> "HIGH".equals(f.getSeverity()) && !"CLOSED".equals(f.getStatus())).count();
+        long openRisks    = risks.stream().filter(r -> !"CLOSED".equals(r.getStatus())).count();
+        long criticalRisks = risks.stream().filter(r -> "CRITICAL".equals(r.getSeverity()) && !"CLOSED".equals(r.getStatus())).count();
+        long highRisks    = risks.stream().filter(r -> "HIGH".equals(r.getSeverity()) && !"CLOSED".equals(r.getStatus())).count();
         int  compliancePct   = total == 0 ? 0 : (int) Math.round((approved * 100.0) / total);
 
         // Build context for Gemini
@@ -422,7 +417,7 @@ public class AiAnalysisService {
             "Project: %s (Code: %s)\n" +
             "Audit Status: %s | Compliance Score: %d%%\n" +
             "Transactions: %d total, %d approved, %d pending evidence\n" +
-            "Findings: %d open (%d critical, %d high)\n" +
+            "Risks: %d open (%d critical, %d high)\n" +
             "Budget: %s | Period: %s to %s\n\n" +
             "Provide a concise, actionable audit analysis with these exact JSON keys:\n" +
             "{\"summary\": \"2-3 sentence executive summary\"," +
@@ -436,7 +431,7 @@ public class AiAnalysisService {
             project.getAuditStatus() != null ? project.getAuditStatus() : "DRAFT",
             compliancePct,
             total, approved, pending,
-            openFindings, criticalFindings, highFindings,
+            openRisks, criticalRisks, highRisks,
             project.getTotalBudget() != null ? "₹" + project.getTotalBudget().longValue() : "Not set",
             project.getAuditPeriodStart() != null ? project.getAuditPeriodStart().toString() : "Not set",
             project.getAuditPeriodEnd()   != null ? project.getAuditPeriodEnd().toString()   : "Not set"
@@ -448,7 +443,7 @@ public class AiAnalysisService {
             JsonNode response = callAiService("/gemini-insights", payload);
 
             if (response.has("error") || response.has("summary") == false) {
-                return buildFallbackInsights(project, compliancePct, openFindings, criticalFindings, pending, total);
+                return buildFallbackInsights(project, compliancePct, openRisks, criticalRisks, pending, total);
             }
 
             Map<String, Object> result = new LinkedHashMap<>();
@@ -464,12 +459,12 @@ public class AiAnalysisService {
             return result;
 
         } catch (Exception e) {
-            return buildFallbackInsights(project, compliancePct, openFindings, criticalFindings, pending, total);
+            return buildFallbackInsights(project, compliancePct, openRisks, criticalRisks, pending, total);
         }
     }
 
     private Map<String, Object> buildFallbackInsights(Project project, int compliancePct,
-                                                        long openFindings, long criticalFindings,
+                                                        long openRisks, long criticalRisks,
                                                         long pending, long total) {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("summary",
@@ -483,14 +478,14 @@ public class AiAnalysisService {
             : List.of("Audit process has been initiated", "Transactions are being tracked"));
         result.put("improvements", List.of(
             pending > 0 ? pending + " transactions are still pending evidence — prioritise collection" : "Evidence collection is complete",
-            openFindings > 0 ? openFindings + " findings remain open — resolve before sign-off" : "All findings are resolved",
+            openRisks > 0 ? openRisks + " risks remain open — resolve before sign-off" : "All risks are resolved",
             "Ensure all vendor links are established for complete three-way match"));
         result.put("risks", List.of(
-            criticalFindings > 0 ? criticalFindings + " CRITICAL findings could block sign-off" : "No critical findings at this time",
+            criticalRisks > 0 ? criticalRisks + " CRITICAL risks could block sign-off" : "No critical risks at this time",
             compliancePct < 80 ? "Low compliance score may delay audit completion" : "Compliance score is within acceptable range"));
         result.put("recommendations", List.of(
             "Run duplicate detection to identify any potential duplicate transactions",
-            "Resolve all open findings before advancing audit status",
+            "Resolve all open risks before advancing audit status",
             "Ensure bank statements are imported and matched for all transactions"));
         return result;
     }
@@ -499,86 +494,33 @@ public class AiAnalysisService {
 
     private JsonNode callAiService(String endpoint, ObjectNode payload) {
         try {
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            HttpEntity<String> entity = new HttpEntity<>(payload.toString(), headers);
+            HttpEntity<String> entity = new HttpEntity<>(payload.toString(), createJsonHeaders());
             ResponseEntity<String> response = restTemplate.postForEntity(
                     aiServiceUrl + endpoint, entity, String.class);
             return objectMapper.readTree(response.getBody());
         } catch (Exception e) {
-            ObjectNode error = objectMapper.createObjectNode();
-            error.put("error", "AI service unavailable: " + e.getMessage());
-            error.put("confidence", 0.0);
-            error.put("needs_human_review", true);
-            error.put("status", "SERVICE_UNAVAILABLE");
-            return error;
+            ObjectNode err = objectMapper.createObjectNode();
+            err.put("error", e.getMessage());
+            return err;
         }
     }
 
+    private HttpHeaders createJsonHeaders() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        return headers;
+    }
+
     private AiAnalysisResult saveResult(UUID transactionId, UUID orgId,
-                                         String analysisType, JsonNode response) {
-        AiAnalysisResult result;
-
-        if (transactionId != null) {
-            result = resultRepository.findByTransactionIdAndAnalysisType(transactionId, analysisType)
-                    .orElse(new AiAnalysisResult());
-        } else {
-            List<AiAnalysisResult> existing = resultRepository.findByOrganizationIdAndAnalysisType(orgId, analysisType);
-            if (!existing.isEmpty()) {
-                resultRepository.deleteAll(existing);
-                resultRepository.flush();
-            }
-            result = new AiAnalysisResult();
-        }
-
-        result.setTransactionId(transactionId);
-        result.setOrganizationId(orgId);
-        result.setAnalysisType(analysisType);
-
-        if (response.has("extracted_amount") && !response.path("extracted_amount").isNull()) {
-            result.setExtractedAmount(response.path("extracted_amount").asDouble());
-        }
-
-        double confidence = response.path("confidence").asDouble(0.0);
-        boolean needsReview = response.path("needs_human_review").asBoolean(true);
-        String status = response.path("result").asText(
-                response.path("validation_status").asText(
-                response.path("overall_status").asText("UNKNOWN")));
-
-        result.setConfidenceScore(confidence);
-        result.setNeedsHumanReview(needsReview);
-        result.setStatus(status);
-
-        if ("VALIDATED".equals(status)) {
-            result.setNeedsHumanReview(false);
-            result.setReviewerDecision(null);
-            result.setReviewerNotes(null);
-            result.setReviewedAt(null);
-            result.setReviewedBy(null);
-        } else if ("MISMATCH".equals(status) || "NEEDS_REVIEW".equals(status)) {
-            result.setNeedsHumanReview(true);
-            result.setReviewerDecision(null);
-            result.setReviewerNotes(null);
-            result.setReviewedAt(null);
-            result.setReviewedBy(null);
-        }
-
-        List<String> issueList = new ArrayList<>();
-        JsonNode issues = response.path("issues");
-        if (issues.isArray()) {
-            issues.forEach(i -> {
-                if (i.isTextual()) issueList.add(i.asText());
-                else if (i.has("field")) issueList.add(i.path("field").asText() + ": " + i.path("detail").asText());
-            });
-        }
-        result.setIssues(String.join("; ", issueList));
-
-        try {
-            result.setResultJson(objectMapper.writeValueAsString(response));
-        } catch (Exception e) {
-            result.setResultJson("{}");
-        }
-
-        return resultRepository.save(result);
+                                         String analysisType, JsonNode result) {
+        AiAnalysisResult entity = new AiAnalysisResult();
+        entity.setTransactionId(transactionId);
+        entity.setOrganizationId(orgId);
+        entity.setAnalysisType(analysisType);
+        entity.setResultJson(result.toString());
+        entity.setConfidenceScore(result.path("confidence").asDouble(0.0));
+        entity.setNeedsHumanReview(result.path("needs_human_review").asBoolean(true));
+        entity.setStatus("PENDING_REVIEW");
+        return resultRepository.save(entity);
     }
 }

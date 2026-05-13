@@ -14,7 +14,7 @@ import java.util.stream.Collectors;
 public class DashboardService {
 
     private final TransactionRepository transactionRepository;
-    private final FindingRepository findingRepository;
+    private final RiskRepository riskRepository;
     private final ProjectRepository projectRepository;
     private final AuditTaskRepository taskRepository;
     private final ChecklistRepository checklistRepository;
@@ -23,14 +23,14 @@ public class DashboardService {
 
     @Autowired
     public DashboardService(TransactionRepository transactionRepository,
-                             FindingRepository findingRepository,
+                             RiskRepository riskRepository,
                              ProjectRepository projectRepository,
                              AuditTaskRepository taskRepository,
                              ChecklistRepository checklistRepository,
                              UserRepository userRepository,
                              SecurityUtils securityUtils) {
         this.transactionRepository = transactionRepository;
-        this.findingRepository = findingRepository;
+        this.riskRepository = riskRepository;
         this.projectRepository = projectRepository;
         this.taskRepository = taskRepository;
         this.checklistRepository = checklistRepository;
@@ -42,7 +42,7 @@ public class DashboardService {
         UUID orgId = securityUtils.getCurrentOrganizationId();
 
         List<Transaction> transactions = transactionRepository.findByOrganizationId(orgId);
-        List<Finding> findings = findingRepository.findByOrganizationId(orgId);
+        List<Risk> risks = riskRepository.findByOrganizationId(orgId);
         List<Project> projects = projectRepository.findByOrganizationId(orgId);
         List<AuditTask> tasks = taskRepository.findByOrganizationId(orgId);
         List<Checklist> checklists = checklistRepository.findByOrganizationId(orgId);
@@ -53,7 +53,7 @@ public class DashboardService {
         // ── Overview ──
         stats.put("totalProjects", projects.size());
         stats.put("totalTransactions", transactions.size());
-        stats.put("totalFindings", findings.size());
+        stats.put("totalRisks", risks.size());
         long compliantTx = transactions.stream().filter(t -> "COMPLIANT".equals(t.getComplianceStatus())).count();
         int complianceScore = transactions.isEmpty() ? 0
                 : (int) Math.round((compliantTx * 100.0) / transactions.size());
@@ -71,42 +71,42 @@ public class DashboardService {
         stats.put("checklistsTotal", checklists.size());
 
         // ── Risk Summary Details ──
-        long criticalFindings = findings.stream().filter(f -> "CRITICAL".equals(f.getSeverity())).count();
-        long highFindings     = findings.stream().filter(f -> "HIGH".equals(f.getSeverity())).count();
-        long openFindings     = findings.stream().filter(f -> !"CLOSED".equals(f.getStatus())).count();
+        long criticalRisks = risks.stream().filter(r -> "CRITICAL".equals(r.getSeverity())).count();
+        long highRisks     = risks.stream().filter(r -> "HIGH".equals(r.getSeverity())).count();
+        long openRisks     = risks.stream().filter(r -> !"CLOSED".equals(r.getStatus())).count();
         long pendingEvidence  = transactions.stream().filter(t -> "PENDING_EVIDENCE".equals(t.getStatus())).count();
         long overdueTasks     = tasks.stream().filter(t -> t.getDueDate() != null && t.getDueDate().isBefore(LocalDate.now()) && !"COMPLETED".equals(t.getStatus())).count();
         
-        stats.put("riskScore", calculateRiskScore(criticalFindings, highFindings, openFindings, pendingEvidence));
+        stats.put("riskScore", calculateRiskScore(criticalRisks, highRisks, openRisks, pendingEvidence));
 
         // ── Transaction status breakdown ──
         Map<String, Long> txByStatus = transactions.stream()
                 .collect(Collectors.groupingBy(t -> t.getStatus() != null ? t.getStatus() : "UNKNOWN", Collectors.counting()));
         stats.put("transactionsByStatus", txByStatus);
 
-        // ── Findings by severity ──
-        Map<String, Long> findingsBySeverity = findings.stream()
-                .collect(Collectors.groupingBy(f -> f.getSeverity() != null ? f.getSeverity() : "UNKNOWN", Collectors.counting()));
-        stats.put("findingsBySeverity", findingsBySeverity);
+        // ── Risks by severity ──
+        Map<String, Long> risksBySeverity = risks.stream()
+                .collect(Collectors.groupingBy(r -> r.getSeverity() != null ? r.getSeverity() : "UNKNOWN", Collectors.counting()));
+        stats.put("risksBySeverity", risksBySeverity);
 
-        // ── Recent Findings ──
-        stats.put("recentFindings", findings.stream()
+        // ── Recent Risks ──
+        stats.put("recentRisks", risks.stream()
                 .sorted(Comparator.comparing(BaseEntity::getCreatedAt).reversed())
                 .limit(5)
-                .map(f -> {
+                .map(r -> {
                     Map<String, Object> m = new HashMap<>();
-                    m.put("id", f.getId());
-                    m.put("title", f.getTitle());
-                    m.put("severity", f.getSeverity());
-                    m.put("status", f.getStatus());
+                    m.put("id", r.getId());
+                    m.put("title", r.getTitle());
+                    m.put("severity", r.getSeverity());
+                    m.put("status", r.getStatus());
                     return m;
                 }).collect(Collectors.toList()));
 
         // ── Risk summary stats ──
         stats.put("riskSummary", Map.of(
-                "critical", criticalFindings,
-                "high", highFindings,
-                "openFindings", openFindings,
+                "critical", criticalRisks,
+                "high", highRisks,
+                "openRisks", openRisks,
                 "pendingEvidence", pendingEvidence,
                 "overdueTasks", overdueTasks
         ));

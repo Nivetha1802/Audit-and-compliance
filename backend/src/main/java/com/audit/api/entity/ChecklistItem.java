@@ -17,16 +17,16 @@ public class ChecklistItem extends BaseEntity {
     @Column(nullable = false)
     private String description;
 
-    private boolean mandatory = true;
+    private Boolean mandatory = true;
 
-    private boolean provided = false;
+    private Boolean provided = false;
 
     @Column(name = "document_id")
     private UUID documentId;
 
     public ChecklistItem() {}
 
-    public ChecklistItem(UUID id, UUID checklistId, String description, boolean mandatory, boolean provided, UUID documentId) {
+    public ChecklistItem(UUID id, UUID checklistId, String description, Boolean mandatory, Boolean provided, UUID documentId) {
         this.id = id;
         this.checklistId = checklistId;
         this.description = description;
@@ -41,15 +41,15 @@ public class ChecklistItem extends BaseEntity {
         private UUID id;
         private UUID checklistId;
         private String description;
-        private boolean mandatory = true;
-        private boolean provided = false;
+        private Boolean mandatory = true;
+        private Boolean provided = false;
         private UUID documentId;
 
         public Builder id(UUID id) { this.id = id; return this; }
         public Builder checklistId(UUID checklistId) { this.checklistId = checklistId; return this; }
         public Builder description(String description) { this.description = description; return this; }
-        public Builder mandatory(boolean mandatory) { this.mandatory = mandatory; return this; }
-        public Builder provided(boolean provided) { this.provided = provided; return this; }
+        public Builder mandatory(Boolean mandatory) { this.mandatory = mandatory; return this; }
+        public Builder provided(Boolean provided) { this.provided = provided; return this; }
         public Builder documentId(UUID documentId) { this.documentId = documentId; return this; }
 
         public ChecklistItem build() {
@@ -63,10 +63,10 @@ public class ChecklistItem extends BaseEntity {
     public void setChecklistId(UUID checklistId) { this.checklistId = checklistId; }
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
-    public boolean isMandatory() { return mandatory; }
-    public void setMandatory(boolean mandatory) { this.mandatory = mandatory; }
-    public boolean isProvided() { return provided; }
-    public void setProvided(boolean provided) { this.provided = provided; }
+    public Boolean isMandatory() { return mandatory != null && mandatory; }
+    public void setMandatory(Boolean mandatory) { this.mandatory = mandatory; }
+    public Boolean isProvided() { return provided != null && provided; }
+    public void setProvided(Boolean provided) { this.provided = provided; }
     public UUID getDocumentId() { return documentId; }
     public void setDocumentId(UUID documentId) { this.documentId = documentId; }
 }

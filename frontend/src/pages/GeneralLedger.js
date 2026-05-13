@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { transactionApi, projectApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, Upload, FileText, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Upload, FileText, RefreshCw, X } from 'lucide-react';
 
 const STATUS_COLORS = {
   APPROVED:         { bg: '#d1fae5', text: '#065f46' },
@@ -224,8 +224,25 @@ function LedgerDetail({ project, onBack, currentUser }) {
             Columns: TxnNo, Date, Description, Debit/Credit, Amount, LedgerName, ProjectCode, Category, Subcategory, Vendor, RefNo
           </p>
           <form onSubmit={handleImport} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-            <input type="file" accept=".csv" onChange={(e) => setLedgerFile(e.target.files[0])}
-              style={{ fontSize: '0.8rem', flex: 1, minWidth: '200px' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1, minWidth: '200px' }}>
+              <input type="file" id="ledgerFile" accept=".csv" style={{ display: 'none' }}
+                onChange={(e) => setLedgerFile(e.target.files[0])} />
+              <button type="button"
+                onClick={() => document.getElementById('ledgerFile').click()}
+                style={{ padding: '0.45rem 1rem', backgroundColor: '#10b981', color: 'white', border: 'none', borderRadius: '0.375rem', cursor: 'pointer', fontSize: '0.82rem', fontWeight: '600', whiteSpace: 'nowrap' }}>
+                Choose File
+              </button>
+              <span style={{ fontSize: '0.8rem', color: '#4b5563', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '150px' }}>
+                {ledgerFile ? ledgerFile.name : 'No file chosen'}
+              </span>
+              {ledgerFile && (
+                <button type="button" 
+                  onClick={() => { setLedgerFile(null); document.getElementById('ledgerFile').value = ''; }}
+                  style={{ padding: '0.45rem 0.75rem', backgroundColor: '#ef4444', color: 'white', border: 'none', borderRadius: '0.375rem', cursor: 'pointer', fontSize: '0.82rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                  <X size={14} /> Remove
+                </button>
+              )}
+            </div>
             <button type="submit" disabled={importing || !ledgerFile}
               style={{ padding: '0.45rem 1.25rem', backgroundColor: importing ? '#6ee7b7' : '#10b981', color: 'white', border: 'none', borderRadius: '0.375rem', cursor: importing ? 'not-allowed' : 'pointer', fontSize: '0.82rem', fontWeight: '600', whiteSpace: 'nowrap' }}>
               {importing ? 'Importing…' : 'Import & Auto-Tag'}

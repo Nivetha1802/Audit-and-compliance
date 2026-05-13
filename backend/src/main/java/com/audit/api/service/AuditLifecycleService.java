@@ -16,7 +16,7 @@ import java.util.*;
 public class AuditLifecycleService {
 
     @Autowired private TransactionRepository transactionRepository;
-    @Autowired private FindingRepository findingRepository;
+    @Autowired private RiskRepository riskRepository;
     @Autowired private ProjectRepository projectRepository;
     @Autowired private ChecklistRepository checklistRepository;
     @Autowired private SecurityUtils securityUtils;
@@ -46,8 +46,8 @@ public class AuditLifecycleService {
             throw new RuntimeException("Only an Auditor or Admin can sign off a project.");
         }
         AuditReadinessCheck check = getReadinessCheck(projectId);
-        if (check.openCriticalFindings() > 0) {
-            throw new RuntimeException("Cannot sign off: " + check.openCriticalFindings() + " CRITICAL finding(s) are still open.");
+        if (check.openCriticalRisks() > 0) {
+            throw new RuntimeException("Cannot sign off: " + check.openCriticalRisks() + " CRITICAL risk(s) are still open.");
         }
         project.setAuditStatus("SIGNED_OFF");
         project.setStatus("COMPLETED");
@@ -62,19 +62,19 @@ public class AuditLifecycleService {
         UUID orgId = securityUtils.getCurrentOrganizationId();
         Project project = getProject(projectId);
         List<Transaction> transactions = transactionRepository.findByOrganizationIdAndProjectId(orgId, projectId);
-        List<Finding> findings = findingRepository.findByOrganizationId(orgId);
+        List<Risk> risks = riskRepository.findByOrganizationId(orgId);
         List<Checklist> checklists = checklistRepository.findByOrganizationId(orgId);
 
         long totalTx      = transactions.size();
         long approvedTx   = transactions.stream().filter(t -> "APPROVED".equals(t.getStatus())).count();
         long pendingTx    = transactions.stream().filter(t -> "PENDING_EVIDENCE".equals(t.getStatus())).count();
-        long openFindings = findings.stream().filter(f -> !"CLOSED".equals(f.getStatus())).count();
-        long criticalOpen = findings.stream().filter(f -> "CRITICAL".equals(f.getSeverity()) && !"CLOSED".equals(f.getStatus())).count();
+        long openRisks = risks.stream().filter(r -> !"CLOSED".equals(r.getStatus())).count();
+        long criticalOpen = risks.stream().filter(r -> "CRITICAL".equals(r.getSeverity()) && !"CLOSED".equals(r.getStatus())).count();
         long completedCL  = checklists.stream().filter(Checklist::isCompleted).count();
         int readinessPct  = totalTx == 0 ? 0 : (int) Math.round((approvedTx * 100.0) / totalTx);
 
         return new AuditReadinessCheck(project.getAuditStatus(), totalTx, approvedTx, pendingTx,
-                openFindings, criticalOpen, completedCL, checklists.size(), readinessPct, project.isLocked());
+                openRisks, criticalOpen, completedCL, checklists.size(), readinessPct, project.isLocked());
     }
 
     private void validateTransition(String current, String target) {
@@ -99,7 +99,7 @@ public class AuditLifecycleService {
 
     public record AuditReadinessCheck(
         String auditStatus, long totalTransactions, long approvedTransactions,
-        long pendingEvidenceTransactions, long openFindings, long openCriticalFindings,
+        long pendingEvidenceTransactions, long openRisks, long openCriticalRisks,
         long checklistsCompleted, long checklistsTotal, int readinessPct, boolean locked
     ) {}
 
@@ -155,9 +155,9 @@ public class AuditLifecycleService {
             txn.setComplianceStatus("COMPLIANT");
         } else {
             txn.setComplianceStatus(txn.getInvoiceNumber() == null ? "NON_COMPLIANT" : "FLAGGED");
-            // Create Findings
+            // Create Risks
             for (String issue : issues) {
-                createFinding(txn, issue);
+                createRisk(txn, issue);
             }
         }
 
@@ -172,15 +172,15 @@ public class AuditLifecycleService {
         return diff.compareTo(maxDiff) > 0;
     }
 
-    private void createFinding(Transaction txn, String issue) {
-        Finding finding = new Finding();
-        finding.setTransactionId(txn.getId());
-        finding.setOrganizationId(txn.getOrganizationId());
-        finding.setTitle("Audit Match Failure: " + txn.getTransactionNumber());
-        finding.setDescription(issue);
-        finding.setSeverity("HIGH");
-        finding.setStatus("OPEN");
-        findingRepository.save(finding);
+    private void createRisk(Transaction txn, String issue) {
+        Risk risk = new Risk();
+        risk.setTransactionId(txn.getId());
+        risk.setOrganizationId(txn.getOrganizationId());
+        risk.setTitle("Audit Match Failure: " + txn.getTransactionNumber());
+        risk.setDescription(issue);
+        risk.setSeverity("HIGH");
+        risk.setStatus("OPEN");
+        riskRepository.save(risk);
     }
 
     @Transactional
@@ -198,9 +198,9 @@ public class AuditLifecycleService {
         project.setComplianceScore(score);
 
         // Project Status Logic
-        long openFindings = findingRepository.countByProjectIdAndStatus(projectId, "OPEN");
+        long openRisks = riskRepository.countByProjectIdAndStatus(projectId, "OPEN");
         
-        if (openFindings > 0) {
+        if (openRisks > 0) {
             project.setAuditStatus("IN_PROGRESS");
             project.setRiskStatus("NEEDS_REVIEW");
         } else if (score > 90) {
@@ -216,8 +216,8 @@ public class AuditLifecycleService {
 
     public boolean isAuditComplete(UUID projectId) {
         Project project = projectRepository.findById(projectId).orElseThrow();
-        long openFindings = findingRepository.countByProjectIdAndStatus(projectId, "OPEN");
+        long openRisks = riskRepository.countByProjectIdAndStatus(projectId, "OPEN");
         // Simplified sign-off check
-        return openFindings == 0 && "COMPLIANT".equals(project.getAuditStatus());
+        return openRisks == 0 && "COMPLIANT".equals(project.getAuditStatus());
     }
 }

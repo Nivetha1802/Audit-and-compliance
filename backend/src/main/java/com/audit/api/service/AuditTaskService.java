@@ -1,130 +1,168 @@
 package com.audit.api.service;
 
 import com.audit.api.entity.AuditTask;
-import com.audit.api.entity.Finding;
+import com.audit.api.entity.Risk;
+import com.audit.api.entity.User;
+import com.audit.api.entity.TaskComment;
 import com.audit.api.repository.AuditTaskRepository;
-import com.audit.api.repository.FindingRepository;
-import com.audit.api.repository.TransactionRepository;
+import com.audit.api.repository.RiskRepository;
+import com.audit.api.repository.UserRepository;
+import com.audit.api.repository.TaskCommentRepository;
 import com.audit.api.util.SecurityUtils;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
 @Service
 public class AuditTaskService {
 
-    private final AuditTaskRepository taskRepository;
-    private final FindingRepository findingRepository;
-    private final TransactionRepository transactionRepository;
+    private final AuditTaskRepository auditTaskRepository;
+    private final RiskRepository riskRepository;
+    private final UserRepository userRepository;
+    private final TaskCommentRepository taskCommentRepository;
     private final SecurityUtils securityUtils;
+    private final EmailService emailService;
 
-    @Autowired
-    public AuditTaskService(AuditTaskRepository taskRepository,
-                             FindingRepository findingRepository,
-                             TransactionRepository transactionRepository,
-                             SecurityUtils securityUtils) {
-        this.taskRepository = taskRepository;
-        this.findingRepository = findingRepository;
-        this.transactionRepository = transactionRepository;
+    public AuditTaskService(
+            AuditTaskRepository auditTaskRepository,
+            RiskRepository riskRepository,
+            UserRepository userRepository,
+            TaskCommentRepository taskCommentRepository,
+            SecurityUtils securityUtils,
+            EmailService emailService) {
+        this.auditTaskRepository = auditTaskRepository;
+        this.riskRepository = riskRepository;
+        this.userRepository = userRepository;
+        this.taskCommentRepository = taskCommentRepository;
         this.securityUtils = securityUtils;
+        this.emailService = emailService;
     }
 
     public List<AuditTask> getAllTasks() {
-        return taskRepository.findByOrganizationId(securityUtils.getCurrentOrganizationId());
+        return auditTaskRepository.findAll();
     }
 
-    public List<AuditTask> getMyTasks() {
-        UUID orgId = securityUtils.getCurrentOrganizationId();
-        UUID userId = securityUtils.getCurrentUser().getId();
-        return taskRepository.findByOrganizationIdAndAssignedTo(orgId, userId);
-    }
-
-    public List<AuditTask> getTasksByTransaction(UUID transactionId) {
-        return taskRepository.findByOrganizationIdAndTransactionId(
-                securityUtils.getCurrentOrganizationId(), transactionId);
-    }
-
-    @Transactional
-    public AuditTask createTask(AuditTask task) {
-        task.setOrganizationId(securityUtils.getCurrentOrganizationId());
-        if (task.getStatus() == null) task.setStatus("OPEN");
-        if (task.getPriority() == null) task.setPriority("MEDIUM");
-        return taskRepository.save(task);
+    public AuditTask createTask(String title, String description, UUID assignedTo, UUID projectId, UUID riskId) {
+        User user = securityUtils.getCurrentUser();
+        AuditTask task = AuditTask.builder()
+                .title(title)
+                .description(description)
+                .assignedTo(assignedTo)
+                .projectId(projectId)
+                .riskId(riskId)
+                .status("PENDING")
+                .priority("MEDIUM")
+                .organizationId(user != null ? user.getOrganizationId() : null)
+                .build();
+        return auditTaskRepository.save(task);
     }
 
     @Transactional
-    public AuditTask updateTask(UUID id, AuditTask updates) {
-        AuditTask task = taskRepository.findById(id)
+    public AuditTask updateTask(UUID id, String status) {
+        AuditTask task = auditTaskRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Task not found"));
-        if (!task.getOrganizationId().equals(securityUtils.getCurrentOrganizationId()))
-            throw new RuntimeException("Unauthorized");
 
-        if (updates.getTitle() != null)       task.setTitle(updates.getTitle());
-        if (updates.getDescription() != null) task.setDescription(updates.getDescription());
-        if (updates.getStatus() != null)      task.setStatus(updates.getStatus());
-        if (updates.getPriority() != null)    task.setPriority(updates.getPriority());
-        if (updates.getAssignedTo() != null)  task.setAssignedTo(updates.getAssignedTo());
-        if (updates.getDueDate() != null)     task.setDueDate(updates.getDueDate());
-        return taskRepository.save(task);
+        User currentUser = securityUtils.getCurrentUser();
+        
+        // Strict permission check
+        if (!currentUser.getId().equals(task.getAssignedTo())) {
+            throw new RuntimeException("Only the assigned user can modify this task's status.");
+        }
+
+        String oldStatus = task.getStatus();
+        if (status.equals(oldStatus)) return task;
+
+        task.setStatus(status);
+        AuditTask savedTask = auditTaskRepository.save(task);
+
+        System.out.println("DEBUG: Task " + id + " status updated from " + oldStatus + " to " + status);
+
+        // Notify risk creator about status change
+        notifyRiskCreator(savedTask, "Status Update: " + status, 
+            String.format("The status of the task '%s' has been changed from %s to %s.", 
+            task.getTitle(), oldStatus, status));
+
+        if ("COMPLETED".equals(status) && !"COMPLETED".equals(oldStatus)) {
+            if (task.getRiskId() != null) {
+                riskRepository.findById(task.getRiskId()).ifPresent(risk -> {
+                    risk.setStatus("CLOSED");
+                    riskRepository.save(risk);
+                    System.out.println("DEBUG: Associated risk " + risk.getId() + " marked as CLOSED");
+                });
+            }
+        }
+
+        return savedTask;
     }
 
-    public void deleteTask(UUID id) {
-        taskRepository.deleteById(id);
+    private void notifyRiskCreator(AuditTask task, String actionLabel, String detailMessage) {
+        if (task.getRiskId() == null) {
+            System.out.println("DEBUG: Task has no riskId, skipping notification");
+            return;
+        }
+
+        riskRepository.findById(task.getRiskId()).ifPresent(risk -> {
+            if (risk.getRiskCreatorId() != null) {
+                userRepository.findById(risk.getRiskCreatorId()).ifPresent(creator -> {
+                    String subject = "Audit Alert: " + risk.getTitle() + " [" + actionLabel + "]";
+                    String body = String.format(
+                        "Hello %s,\n\nThere has been an update on a task associated with a risk you raised.\n\n" +
+                        "--- ACTION ---\n" +
+                        "%s\n\n" +
+                        "--- RISK DETAILS ---\n" +
+                        "Title: %s\n" +
+                        "Current Status: %s\n\n" +
+                        "--- TASK DETAILS ---\n" +
+                        "Task: %s\n" +
+                        "Current Status: %s\n" +
+                        "Updated By: %s\n\n" +
+                        "You are receiving this because you are the creator of this risk.",
+                        creator.getFullName(),
+                        detailMessage,
+                        risk.getTitle(),
+                        risk.getStatus(),
+                        task.getTitle(),
+                        task.getStatus(),
+                        securityUtils.getCurrentUser().getFullName()
+                    );
+                    
+                    System.out.println("DEBUG: Sending email to risk creator: " + creator.getEmail());
+                    emailService.sendEmail(creator.getEmail(), subject, body);
+                });
+            } else {
+                System.out.println("DEBUG: Risk has no creatorId, skipping email");
+            }
+        });
     }
 
-    /**
-     * Used by @PreAuthorize SpEL: returns true if the authenticated user (by email)
-     * is the user assigned to the given task.
-     */
-    public boolean isAssignedUser(UUID taskId, String email) {
-        return taskRepository.findById(taskId)
-                .map(task -> {
-                    if (task.getAssignedTo() == null) return false;
-                    return securityUtils.getCurrentUser().getId().equals(task.getAssignedTo());
-                })
-                .orElse(false);
+    public List<TaskComment> getComments(UUID taskId) {
+        return taskCommentRepository.findByTaskIdOrderByCreatedAtDesc(taskId);
     }
 
-    /**
-     * Auto-generate tasks for a finding:
-     * - RESUBMIT_EVIDENCE task assigned to the transaction owner
-     * - AUDIT_REVIEW task assigned to the CA (auditor)
-     */
     @Transactional
-    public List<AuditTask> generateTasksForFinding(UUID findingId, UUID assigneeId, UUID auditorId) {
-        UUID orgId = securityUtils.getCurrentOrganizationId();
-        Finding finding = findingRepository.findById(findingId)
-                .orElseThrow(() -> new RuntimeException("Finding not found"));
+    public TaskComment addComment(UUID taskId, String commentText) {
+        User user = securityUtils.getCurrentUser();
+        System.out.println("DEBUG: Adding comment to task " + taskId + " by " + user.getFullName());
 
-        AuditTask resubmit = new AuditTask();
-        resubmit.setOrganizationId(orgId);
-        resubmit.setFindingId(findingId);
-        resubmit.setTransactionId(finding.getTransactionId());
-        resubmit.setTitle("Resubmit evidence for: " + finding.getTitle());
-        resubmit.setDescription("Finding raised: " + finding.getDescription()
-                + "\nPlease resubmit corrected evidence.");
-        resubmit.setTaskType("RESUBMIT_EVIDENCE");
-        resubmit.setPriority(finding.getSeverity());
-        resubmit.setStatus("OPEN");
-        resubmit.setAssignedTo(assigneeId);
-        resubmit.setDueDate(LocalDate.now().plusDays(7));
+        TaskComment comment = TaskComment.builder()
+                .taskId(taskId)
+                .userId(user.getId())
+                .userName(user.getFullName())
+                .comment(commentText)
+                .createdAt(LocalDateTime.now())
+                .organizationId(user.getOrganizationId())
+                .build();
+        TaskComment savedComment = taskCommentRepository.save(comment);
 
-        AuditTask review = new AuditTask();
-        review.setOrganizationId(orgId);
-        review.setFindingId(findingId);
-        review.setTransactionId(finding.getTransactionId());
-        review.setTitle("CA Review: " + finding.getTitle());
-        review.setDescription("Review resubmitted evidence after remediation.");
-        review.setTaskType("AUDIT_REVIEW");
-        review.setPriority(finding.getSeverity());
-        review.setStatus("OPEN");
-        review.setAssignedTo(auditorId);
-        review.setDueDate(LocalDate.now().plusDays(14));
+        // Notify risk creator about new comment
+        auditTaskRepository.findById(taskId).ifPresent(task -> {
+            notifyRiskCreator(task, "New Comment Added", 
+                String.format("%s added a comment: \"%s\"", user.getFullName(), commentText));
+        });
 
-        return taskRepository.saveAll(List.of(resubmit, review));
+        return savedComment;
     }
 }
