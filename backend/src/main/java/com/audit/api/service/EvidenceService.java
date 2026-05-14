@@ -41,36 +41,72 @@ public class EvidenceService {
 
     @Transactional
     public Checklist getOrCreateChecklist(UUID transactionId) {
-        return checklistRepository.findByTransactionId(transactionId)
-                .orElseGet(() -> {
-                    Transaction tx = transactionRepository.findById(transactionId)
-                            .orElseThrow(() -> new RuntimeException("Transaction not found"));
-                    
-                    Checklist checklist = new Checklist();
-                    checklist.setTransactionId(transactionId);
-                    checklist.setCompleted(false);
-                    checklist.setOrganizationId(tx.getOrganizationId());
-                    Checklist savedChecklist = checklistRepository.save(checklist);
-                    
-                    // Populate items from template
-                    if (tx.getCategoryId() != null) {
-                        checklistTemplateRepository.findByCategoryId(tx.getCategoryId())
-                                .ifPresent(template -> {
-                                    List<ChecklistItemTemplate> itemTemplates = 
-                                            checklistItemTemplateRepository.findByTemplateId(template.getId());
-                                    for (ChecklistItemTemplate itemTemplate : itemTemplates) {
-                                        ChecklistItem item = new ChecklistItem();
-                                        item.setChecklistId(savedChecklist.getId());
-                                        item.setDescription(itemTemplate.getDescription());
-                                        item.setMandatory(itemTemplate.isMandatory());
-                                        item.setProvided(false);
-                                        item.setOrganizationId(tx.getOrganizationId());
-                                        checklistItemRepository.save(item);
-                                    }
-                                });
-                    }
-                    return savedChecklist;
-                });
+        java.util.Optional<Checklist> existing = checklistRepository.findByTransactionId(transactionId);
+        
+        if (existing.isPresent()) {
+            Checklist cl = existing.get();
+            List<ChecklistItem> existingItems = checklistItemRepository.findByChecklistId(cl.getId());
+            if (existingItems.isEmpty()) {
+                Transaction tx = transactionRepository.findById(transactionId).orElse(null);
+                if (tx != null) {
+                    populateChecklistFromTemplate(cl, tx);
+                }
+            }
+            return cl;
+        }
+
+        // Create new checklist
+        Transaction tx = transactionRepository.findById(transactionId)
+                .orElseThrow(() -> new RuntimeException("Transaction not found"));
+
+        Checklist checklist = new Checklist();
+        checklist.setTransactionId(transactionId);
+        checklist.setCompleted(false);
+        checklist.setOrganizationId(tx.getOrganizationId());
+        Checklist savedChecklist = checklistRepository.save(checklist);
+
+        populateChecklistFromTemplate(savedChecklist, tx);
+        return savedChecklist;
+    }
+
+    private void populateChecklistFromTemplate(Checklist checklist, Transaction tx) {
+        java.util.Optional<com.audit.api.entity.ChecklistTemplate> templateOpt = java.util.Optional.empty();
+
+        // Priority 1: Match by categoryId (user-created OrgCategory-linked template)
+        if (tx.getCategoryId() != null) {
+            templateOpt = checklistTemplateRepository.findByCategoryId(tx.getCategoryId());
+        }
+
+        // Priority 2: Match by category name (for transactions where categoryId is null)
+        if (!templateOpt.isPresent() && tx.getCategoryName() != null && !tx.getCategoryName().isEmpty()) {
+            String catName = tx.getCategoryName().trim().toLowerCase();
+            templateOpt = checklistTemplateRepository.findAll().stream()
+                    .filter(t -> t.getName() != null &&
+                            (t.getName().trim().toLowerCase().equals(catName) ||
+                             t.getName().trim().toLowerCase().contains(catName) ||
+                             catName.contains(t.getName().trim().toLowerCase())))
+                    .findFirst();
+        }
+
+        // Only populate if a matching user-defined template was found
+        // Do NOT fall back to unrelated templates
+        if (!templateOpt.isPresent()) {
+            return;
+        }
+
+        com.audit.api.entity.ChecklistTemplate template = templateOpt.get();
+        List<ChecklistItemTemplate> itemTemplates =
+                checklistItemTemplateRepository.findByTemplateId(template.getId());
+
+        for (ChecklistItemTemplate itemTemplate : itemTemplates) {
+            ChecklistItem item = new ChecklistItem();
+            item.setChecklistId(checklist.getId());
+            item.setDescription(itemTemplate.getDescription());
+            item.setMandatory(itemTemplate.isMandatory());
+            item.setProvided(false);
+            item.setOrganizationId(checklist.getOrganizationId());
+            checklistItemRepository.save(item);
+        }
     }
 
     public List<ChecklistItemResponse> getChecklistItemsWithDocNames(UUID checklistId) {

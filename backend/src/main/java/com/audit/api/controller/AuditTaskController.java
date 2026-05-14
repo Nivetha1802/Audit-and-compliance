@@ -47,7 +47,9 @@ public class AuditTaskController {
 
     @PutMapping("/{id}/status")
     public AuditTask updateStatus(@PathVariable UUID id, @RequestBody Map<String, String> payload) {
-        return auditTaskService.updateTask(id, payload.get("status"));
+        String userIdStr = payload.get("userId");
+        UUID userId = (userIdStr != null) ? UUID.fromString(userIdStr) : null;
+        return auditTaskService.updateStatus(id, payload.get("status"), userId);
     }
 
     @GetMapping("/{id}/comments")
@@ -57,6 +59,8 @@ public class AuditTaskController {
 
     @PostMapping("/{id}/comments")
     public TaskComment addComment(@PathVariable UUID id, @RequestBody Map<String, String> payload) {
-        return auditTaskService.addComment(id, payload.get("comment"));
+        String userIdStr = payload.get("userId");
+        UUID userId = (userIdStr != null) ? UUID.fromString(userIdStr) : null;
+        return auditTaskService.addComment(id, payload.get("comment"), userId);
     }
 }

@@ -8,4 +8,6 @@ import java.util.UUID;
 public interface ChecklistTemplateRepository extends JpaRepository<ChecklistTemplate, UUID> {
     List<ChecklistTemplate> findByOrganizationId(UUID organizationId);
     java.util.Optional<ChecklistTemplate> findByCategoryId(UUID categoryId);
+    java.util.Optional<ChecklistTemplate> findByNameContainingIgnoreCase(String name);
+    List<ChecklistTemplate> findAll();
 }

@@ -73,7 +73,12 @@ public class DataInitializer implements CommandLineRunner {
             userRepository.save(jessy);
         }
 
-        // 3. Create sample data if empty
+        // 3. Ensure checklist templates exist for common categories
+        if (checklistTemplateRepository.count() == 0) {
+            seedChecklistTemplates(orgId);
+        }
+
+        // 4. Create sample data if empty
         if (projectRepository.count() == 0) {
             Project project = new Project();
             project.setName("Annual Financial Audit 2023");
@@ -176,5 +181,67 @@ public class DataInitializer implements CommandLineRunner {
             risk.setOrganizationId(orgId);
             riskRepository.save(risk);
         }
+    }
+
+    private void seedChecklistTemplates(UUID orgId) {
+        // Travel & Entertainment
+        ChecklistTemplate travel = new ChecklistTemplate();
+        travel.setName("Travel & Entertainment");
+        travel.setDescription("Required documents for travel and entertainment expenses");
+        travel.setOrganizationId(orgId);
+        travel = checklistTemplateRepository.save(travel);
+        saveItem(travel.getId(), "Flight Boarding Pass / Ticket", true);
+        saveItem(travel.getId(), "Hotel Receipt", true);
+        saveItem(travel.getId(), "Travel Authorization Form", true);
+        saveItem(travel.getId(), "Expense Claim Form", false);
+
+        // Office Supplies
+        ChecklistTemplate office = new ChecklistTemplate();
+        office.setName("Office Supplies");
+        office.setDescription("Required documents for office supply purchases");
+        office.setOrganizationId(orgId);
+        office = checklistTemplateRepository.save(office);
+        saveItem(office.getId(), "Purchase Invoice", true);
+        saveItem(office.getId(), "Delivery Note / GRN", true);
+        saveItem(office.getId(), "Purchase Order", false);
+
+        // Payroll
+        ChecklistTemplate payroll = new ChecklistTemplate();
+        payroll.setName("Payroll");
+        payroll.setDescription("Required documents for payroll transactions");
+        payroll.setOrganizationId(orgId);
+        payroll = checklistTemplateRepository.save(payroll);
+        saveItem(payroll.getId(), "Payroll Register / Summary", true);
+        saveItem(payroll.getId(), "Bank Transfer Confirmation", true);
+        saveItem(payroll.getId(), "Employee Attendance Record", false);
+
+        // Vendor Payment
+        ChecklistTemplate vendor = new ChecklistTemplate();
+        vendor.setName("Vendor Payment");
+        vendor.setDescription("Required documents for vendor payments");
+        vendor.setOrganizationId(orgId);
+        vendor = checklistTemplateRepository.save(vendor);
+        saveItem(vendor.getId(), "Vendor Invoice", true);
+        saveItem(vendor.getId(), "Purchase Order", true);
+        saveItem(vendor.getId(), "Goods Receipt Note", true);
+        saveItem(vendor.getId(), "Payment Voucher", false);
+
+        // General / Default
+        ChecklistTemplate general = new ChecklistTemplate();
+        general.setName("General");
+        general.setDescription("Default evidence checklist for uncategorized transactions");
+        general.setOrganizationId(orgId);
+        general = checklistTemplateRepository.save(general);
+        saveItem(general.getId(), "Supporting Invoice / Receipt", true);
+        saveItem(general.getId(), "Bank Statement Entry", true);
+        saveItem(general.getId(), "Authorization Approval", false);
+    }
+
+    private void saveItem(UUID templateId, String description, boolean mandatory) {
+        ChecklistItemTemplate item = new ChecklistItemTemplate();
+        item.setTemplateId(templateId);
+        item.setDescription(description);
+        item.setMandatory(mandatory);
+        checklistItemTemplateRepository.save(item);
     }
 }

@@ -2,11 +2,12 @@ package com.audit.api.service;
 
 import com.audit.api.entity.Risk;
 import com.audit.api.entity.Project;
-import com.audit.api.entity.User;
+import com.audit.api.entity.AuditTask;
+import com.audit.api.entity.AuditActionLog;
 import com.audit.api.repository.RiskRepository;
 import com.audit.api.repository.ProjectRepository;
 import com.audit.api.repository.UserRepository;
-import com.audit.api.util.SecurityUtils;
+import com.audit.api.repository.AuditActionLogRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,95 +16,149 @@ import java.util.UUID;
 
 @Service
 public class RiskService {
-
     private final RiskRepository riskRepository;
     private final ProjectRepository projectRepository;
-    private final AuditTaskService auditTaskService;
     private final UserRepository userRepository;
     private final EmailService emailService;
-    private final SecurityUtils securityUtils;
+    private final AuditTaskService auditTaskService;
+    private final AuditActionLogRepository auditActionLogRepository;
 
-    public RiskService(
-            RiskRepository riskRepository,
-            ProjectRepository projectRepository,
-            AuditTaskService auditTaskService,
-            UserRepository userRepository,
-            EmailService emailService,
-            SecurityUtils securityUtils) {
+    public RiskService(RiskRepository riskRepository,
+                       ProjectRepository projectRepository,
+                       UserRepository userRepository,
+                       EmailService emailService,
+                       AuditTaskService auditTaskService,
+                       AuditActionLogRepository auditActionLogRepository) {
         this.riskRepository = riskRepository;
         this.projectRepository = projectRepository;
-        this.auditTaskService = auditTaskService;
         this.userRepository = userRepository;
         this.emailService = emailService;
-        this.securityUtils = securityUtils;
+        this.auditTaskService = auditTaskService;
+        this.auditActionLogRepository = auditActionLogRepository;
     }
 
     public List<Risk> getAllRisks() {
         return riskRepository.findAll();
     }
 
+    public List<Risk> getRisksByProject(UUID projectId) {
+        return riskRepository.findByProjectId(projectId);
+    }
+
     @Transactional
     public Risk createRisk(Risk risk) {
-        risk.setStatus("OPEN");
-        User currentUser = securityUtils.getCurrentUser();
-        if (currentUser != null) {
-            risk.setRiskCreatorId(currentUser.getId());
-            risk.setOrganizationId(currentUser.getOrganizationId());
-        }
         Risk savedRisk = riskRepository.save(risk);
         
-        if (risk.getProjectId() != null) {
-            Project project = projectRepository.findById(risk.getProjectId()).orElse(null);
-            if (project != null && project.getProjectOwnerId() != null) {
-                createTaskForRisk(savedRisk, project);
-            }
-        }
+        // Log action
+        auditActionLogRepository.save(AuditActionLog.builder()
+                .entityType("RISK")
+                .entityId(savedRisk.getId())
+                .actionType("CREATED")
+                .performedBy(risk.getRiskCreatorId())
+                .details("Risk created: " + risk.getTitle())
+                .projectId(risk.getProjectId())
+                .build());
+
+        // Automatically create a task for the project owner to address this risk
+        createTaskForRisk(savedRisk);
+        
+        // Send email to project owner
+        notifyProjectOwner(savedRisk);
+        
         return savedRisk;
     }
 
-    private void createTaskForRisk(Risk risk, Project project) {
-        auditTaskService.createTask(
-            "Action Required: " + risk.getTitle(),
-            "A new risk has been identified for project: " + project.getName() + ". Description: " + risk.getDescription(),
-            project.getProjectOwnerId(),
-            risk.getProjectId(),
-            risk.getId(),
-            null
-        );
+    @Transactional
+    public Risk updateStatus(UUID id, String status, UUID userId) {
+        Risk risk = riskRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Risk not found"));
+        String oldStatus = risk.getStatus();
+        risk.setStatus(status);
+        Risk updated = riskRepository.save(risk);
 
-        User owner = userRepository.findById(project.getProjectOwnerId()).orElse(null);
-        if (owner != null && owner.getEmail() != null) {
-            emailService.sendEmail(
-                owner.getEmail(),
-                "New Risk Identified: " + risk.getTitle(),
-                "Hello " + owner.getFullName() + ",\n\nA new risk has been raised for your project: " + project.getName() + 
-                ".\n\nRisk Title: " + risk.getTitle() + 
-                "\nSeverity: " + risk.getSeverity() +
-                "\n\nA task has been automatically assigned to you to address this risk."
-            );
-        }
+        // Log action
+        auditActionLogRepository.save(AuditActionLog.builder()
+                .entityType("RISK")
+                .entityId(id)
+                .actionType("STATUS_CHANGE")
+                .performedBy(userId)
+                .details("Status changed from " + oldStatus + " to " + status)
+                .projectId(risk.getProjectId())
+                .build());
+
+        return updated;
     }
 
     @Transactional
-    public Risk updateStatus(UUID id, String status) {
-        Risk risk = riskRepository.findById(id).orElseThrow(() -> new RuntimeException("Risk not found"));
-        String oldStatus = risk.getStatus();
-        risk.setStatus(status);
-        Risk updatedRisk = riskRepository.save(risk);
+    public Risk updateRisk(UUID id, Risk riskDetails, UUID userId) {
+        Risk risk = riskRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Risk not found"));
+        
+        risk.setTitle(riskDetails.getTitle());
+        risk.setDescription(riskDetails.getDescription());
+        risk.setSeverity(riskDetails.getSeverity());
+        risk.setStatus(riskDetails.getStatus());
+        
+        Risk updated = riskRepository.save(risk);
 
-        if ("OPEN".equals(status) && "CLOSED".equals(oldStatus)) {
-            Project project = projectRepository.findById(risk.getProjectId()).orElse(null);
-            if (project != null) {
-                createTaskForRisk(updatedRisk, project);
-            }
-        }
+        // Log action
+        auditActionLogRepository.save(AuditActionLog.builder()
+                .entityType("RISK")
+                .entityId(id)
+                .actionType("UPDATED")
+                .performedBy(userId)
+                .details("Risk details updated")
+                .projectId(risk.getProjectId())
+                .build());
 
-        return updatedRisk;
+        return updated;
     }
 
-    public List<Risk> getRisksByTransaction(UUID transactionId) {
-        return riskRepository.findAll().stream()
-            .filter(r -> transactionId.equals(r.getTransactionId()))
-            .toList();
+    @Transactional
+    public void deleteRisk(UUID id, UUID userId) {
+        Risk risk = riskRepository.findById(id).orElse(null);
+        if (risk != null) {
+            // Log action before deletion
+            auditActionLogRepository.save(AuditActionLog.builder()
+                    .entityType("RISK")
+                    .entityId(id)
+                    .actionType("DELETED")
+                    .performedBy(userId)
+                    .details("Risk deleted: " + risk.getTitle())
+                    .projectId(risk.getProjectId())
+                    .build());
+            
+            auditTaskService.deleteTasksByRiskId(id);
+            riskRepository.deleteById(id);
+        }
+    }
+
+    private void createTaskForRisk(Risk risk) {
+        projectRepository.findById(risk.getProjectId()).ifPresent(project -> {
+            auditTaskService.createTask(
+                "Address Risk: " + risk.getTitle(),
+                "Please review and address the following risk: " + risk.getDescription(),
+                project.getProjectOwnerId(),
+                risk.getProjectId(),
+                risk.getId(),
+                null
+            );
+        });
+    }
+
+    private void notifyProjectOwner(Risk risk) {
+        projectRepository.findById(risk.getProjectId()).ifPresent(project -> {
+            if (project.getProjectOwnerId() != null) {
+                userRepository.findById(project.getProjectOwnerId()).ifPresent(owner -> {
+                    if (owner.getEmail() != null) {
+                        String subject = "New Risk Created: " + risk.getTitle();
+                        String message = "A new risk has been identified in your project: " + risk.getTitle() + 
+                                         "\nSeverity: " + risk.getSeverity() + 
+                                         "\nDescription: " + risk.getDescription();
+                        emailService.sendEmail(owner.getEmail(), subject, message);
+                    }
+                });
+            }
+        });
     }
 }

@@ -43,6 +43,7 @@ export const riskApi = {
   getAll: () => api.get('/risks'),
   create: (data) => api.post('/risks', data),
   update: (id, data) => api.put(`/risks/${id}`, data),
+  delete: (id) => api.delete(`/risks/${id}`),
 };
 
 export const taskApi = {
@@ -70,17 +71,37 @@ export const dashboardApi = {
 };
 
 export const aiApi = {
-  analyze: (projectId) => api.post(`/ai/analyze/${projectId}`),
+  threeWayMatchDocs: (txId) => api.post(`/ai/three-way-match-docs/${txId}`),
+  threeWayMatch: (txId, data) => api.post(`/ai/three-way-match/${txId}`, data),
+  budgetVariance: (projectId, data) => api.post(`/ai/budget-variance/${projectId}`, data),
+  duplicateDetection: (projectId) => api.post(`/ai/duplicate-detection/${projectId}`),
+  getWorkflowFeedback: (projectId) => api.get(`/audit-analysis/feedback/${projectId}`),
+  validateEvidence: (txId, data) => api.post(`/ai/validate-evidence/${txId}`, data),
+  getPendingReviews: () => api.get('/ai/pending-reviews'),
+  submitReview: (id, data) => api.post(`/ai/review/${id}`, data),
+  getAllResults: () => api.get('/ai/results'),
+  getByTransaction: (txId) => api.get(`/ai/results/transaction/${txId}`),
+  getAuditInsights: (projectId) => api.get(`/ai/audit-insights/${projectId}`),
+  runComprehensiveAnalysis: (projectId) => api.post(`/ai/run-comprehensive-analysis/${projectId}`),
 };
 
-export const userApi = {
-  getAll: () => api.get('/users'),
+export const masterCategoriesApi = {
+  getAll: () => api.get('/master-categories'),
+  saveTree: (tree) => api.post('/master-categories/tree', tree),
 };
 
-export const vendorApi = {
+export const vendorsApi = {
   getAll: () => api.get('/vendors'),
   create: (data) => api.post('/vendors', data),
   update: (id, data) => api.put(`/vendors/${id}`, data),
+  delete: (id) => api.delete(`/vendors/${id}`),
+  verifyGst: (id) => api.post(`/vendors/${id}/verify-gst`),
+};
+
+export const vendorApi = vendorsApi;
+
+export const userApi = {
+  getAll: () => api.get('/users'),
 };
 
 export default api;

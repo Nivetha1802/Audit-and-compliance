@@ -12,6 +12,8 @@ import Evidence from './pages/Evidence';
 import GeneralLedger from './pages/GeneralLedger';
 import BankTransactionData from './pages/BankTransactionData';
 import ConductAuditAnalysis from './pages/ConductAuditAnalysis';
+import EvidenceChecklists from './pages/EvidenceChecklists';
+import Vendors from './pages/Vendors';
 
 const PrivateRoute = ({ children }) => {
   const { user } = useAuth();
@@ -31,6 +33,8 @@ function App() {
           <Route path="/evidence-management" element={<PrivateRoute><EvidenceManagement /></PrivateRoute>} />
           <Route path="/evidence/:projectId/:transactionId" element={<PrivateRoute><Evidence /></PrivateRoute>} />
           <Route path="/general-ledger" element={<PrivateRoute><GeneralLedger /></PrivateRoute>} />
+          <Route path="/evidence-checklist" element={<PrivateRoute><EvidenceChecklists /></PrivateRoute>} />
+          <Route path="/vendors" element={<PrivateRoute><Vendors /></PrivateRoute>} />
           <Route path="/bank-transactions" element={<PrivateRoute><BankTransactionData /></PrivateRoute>} />
           <Route path="/analysis" element={<PrivateRoute><ConductAuditAnalysis /></PrivateRoute>} />
         </Routes>

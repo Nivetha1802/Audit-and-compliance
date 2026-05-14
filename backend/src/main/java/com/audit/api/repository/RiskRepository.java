@@ -10,6 +10,7 @@ import java.util.UUID;
 @Repository
 public interface RiskRepository extends JpaRepository<Risk, UUID> {
     List<Risk> findByOrganizationId(UUID organizationId);
+    List<Risk> findByProjectId(UUID projectId);
     List<Risk> findByOrganizationIdAndTransactionId(UUID organizationId, UUID transactionId);
     long countByProjectIdAndStatus(UUID projectId, String status);
 }

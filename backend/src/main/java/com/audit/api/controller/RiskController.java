@@ -11,6 +11,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/risks")
+@CrossOrigin(origins = "*")
 public class RiskController {
 
     private final RiskService riskService;
@@ -25,9 +26,9 @@ public class RiskController {
         return riskService.getAllRisks();
     }
 
-    @GetMapping("/transaction/{transactionId}")
-    public List<Risk> getRisksByTransaction(@PathVariable UUID transactionId) {
-        return riskService.getRisksByTransaction(transactionId);
+    @GetMapping("/project/{projectId}")
+    public List<Risk> getRisksByProject(@PathVariable UUID projectId) {
+        return riskService.getRisksByProject(projectId);
     }
 
     @PostMapping
@@ -37,6 +38,13 @@ public class RiskController {
 
     @PutMapping("/{id}")
     public Risk updateStatus(@PathVariable UUID id, @RequestBody Map<String, String> payload) {
-        return riskService.updateStatus(id, payload.get("status"));
+        String userIdStr = payload.get("userId");
+        UUID userId = (userIdStr != null) ? UUID.fromString(userIdStr) : null;
+        return riskService.updateStatus(id, payload.get("status"), userId);
+    }
+
+    @DeleteMapping("/{id}")
+    public void deleteRisk(@PathVariable UUID id, @RequestParam(required = false) UUID userId) {
+        riskService.deleteRisk(id, userId);
     }
 }

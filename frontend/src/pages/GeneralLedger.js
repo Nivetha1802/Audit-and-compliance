@@ -70,7 +70,7 @@ function EvidenceSidebar({ transaction, projectId, onClose, onEvidenceUpdate, cu
   return (
     <div style={{ 
       width: '420px', backgroundColor: 'white', borderLeft: '1px solid #e2e8f0', 
-      height: '100%', position: 'absolute', right: 0, top: 0, zIndex: 1000,
+      height: '100vh', position: 'fixed', right: 0, top: 0, zIndex: 1000,
       display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 15px rgba(0,0,0,0.1)',
       animation: 'slideIn 0.3s ease-out'
     }}>
@@ -109,6 +109,7 @@ function EvidenceSidebar({ transaction, projectId, onClose, onEvidenceUpdate, cu
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
+        {activeTab === 'checklist' && <ChecklistSection transaction={transaction} projectId={projectId} onUpdate={onEvidenceUpdate} />}
         {activeTab === 'vendor' && <VendorLinkingSection transaction={transaction} onUpdate={onEvidenceUpdate} currentUser={currentUser} />}
         {activeTab === 'tasks' && <TaskCreationSection transaction={transaction} projectId={projectId} currentUser={currentUser} />}
         {activeTab === 'risks' && <RiskCreationSection transaction={transaction} projectId={projectId} currentUser={currentUser} />}
@@ -170,7 +171,20 @@ function ChecklistSection({ transaction, projectId, onUpdate }) {
           {items.map(item => (
             <div key={item.id} style={{ padding: '12px', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                <span style={{ fontSize: '13px', fontWeight: '500' }}>{item.itemName}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '13px', fontWeight: '500' }}>{item.description}</span>
+                  <span style={{ 
+                    fontSize: '10px', 
+                    padding: '2px 6px', 
+                    borderRadius: '4px', 
+                    backgroundColor: item.mandatory ? '#fee2e2' : '#f1f5f9', 
+                    color: item.mandatory ? '#ef4444' : '#64748b', 
+                    fontWeight: '600', 
+                    textTransform: 'uppercase' 
+                  }}>
+                    {item.mandatory ? 'Required' : 'Optional'}
+                  </span>
+                </div>
                 {item.provided ? <CheckCircle2 size={16} color="#10b981" /> : <Clock size={16} color="#f59e0b" />}
               </div>
               {item.provided ? (
@@ -392,12 +406,11 @@ function ProjectsTable({ projects, transactions, onSelect }) {
               <th style={thStyle}>Project Name</th>
               <th style={thStyle}>Status</th>
               <th style={thStyle}>Audit Status</th>
-              <th style={thStyle}>Ledger Entries</th>
+              <th style={{...thStyle, textAlign: 'center'}}>Action</th>
             </tr>
           </thead>
           <tbody>
             {projects.map((p, idx) => {
-              const txCount = transactions.filter(t => t.projectId === p.id).length;
               return (
                 <tr key={p.id} style={{ borderBottom: '1px solid #f9fafb' }}>
                   <td style={tdStyle}>{idx + 1}</td>
@@ -408,6 +421,14 @@ function ProjectsTable({ projects, transactions, onSelect }) {
                     </span>
                   </td>
                   <td style={tdStyle}>{p.auditStatus || 'DRAFT'}</td>
+                  <td style={{...tdStyle, textAlign: 'center'}}>
+                    <button 
+                      onClick={() => onSelect(p)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#2563eb' }}
+                    >
+                      <ChevronRight size={20} />
+                    </button>
+                  </td>
                 </tr>
               );
             })}
@@ -423,6 +444,9 @@ function LedgerDetail({ project, onBack, currentUser, onEvidenceUpdate }) {
   const [loading, setLoading] = useState(true);
   const [selectedTransaction, setSelectedTransaction] = useState(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = React.useRef(null);
 
   useEffect(() => { fetchTransactions(); }, [project.id]);
 
@@ -435,14 +459,34 @@ function LedgerDetail({ project, onBack, currentUser, onEvidenceUpdate }) {
     finally { setLoading(false); }
   };
 
-  const handleImport = async (file) => {
-    const fd = new FormData();
-    fd.append('file', file);
-    fd.append('projectId', project.id);
+  const onFileChange = (e) => {
+    if (e.target.files[0]) {
+      setSelectedFile(e.target.files[0]);
+    }
+  };
+
+  const handleRemoveFile = () => {
+    setSelectedFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const triggerImport = async () => {
+    if (!selectedFile) return;
+    setImporting(true);
     try {
+      const fd = new FormData();
+      fd.append('file', selectedFile);
+      fd.append('projectId', project.id);
       await transactionApi.importCsv(fd);
+      setSelectedFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
       fetchTransactions();
-    } catch (err) { alert('Import failed'); }
+      alert('Import successful');
+    } catch (err) {
+      alert('Import failed');
+    } finally {
+      setImporting(false);
+    }
   };
 
 
@@ -468,17 +512,112 @@ function LedgerDetail({ project, onBack, currentUser, onEvidenceUpdate }) {
           </div>
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
-          <input type="file" id="ledger-csv" accept=".csv" hidden
-            onChange={e => { if(e.target.files[0]) { handleImport(e.target.files[0]); e.target.value=''; } }}
-          />
-          <label htmlFor="ledger-csv" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '8px', border: '1px solid #2563eb', color: '#2563eb', cursor: 'pointer', fontSize: '13px', fontWeight: '600', backgroundColor: 'white' }}>
-            <Upload size={16} /> Choose File
-          </label>
-          <button onClick={() => document.getElementById('ledger-csv').click()}
-            style={{ marginLeft: '8px', padding: '8px 16px', borderRadius: '8px', backgroundColor: '#2563eb', color: 'white', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Upload size={16} /> Import Ledger
-          </button>
+        <div style={{ 
+          backgroundColor: '#f8fafc', 
+          padding: '16px', 
+          borderRadius: '12px', 
+          border: '1px dashed #cbd5e1', 
+          marginBottom: '24px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ 
+              width: '40px', 
+              height: '40px', 
+              borderRadius: '8px', 
+              backgroundColor: '#eff6ff', 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center',
+              color: '#2563eb'
+            }}>
+              <FileText size={20} />
+            </div>
+            <div>
+              <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b' }}>
+                {selectedFile ? selectedFile.name : 'Import Ledger Data'}
+              </div>
+              <div style={{ fontSize: '12px', color: '#64748b' }}>
+                {selectedFile ? `${(selectedFile.size / 1024).toFixed(2)} KB` : 'Upload your ledger CSV file here'}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <input 
+              type="file" 
+              id="ledger-upload" 
+              accept=".csv" 
+              hidden 
+              onChange={onFileChange}
+              ref={fileInputRef}
+            />
+            
+            {!selectedFile ? (
+              <label 
+                htmlFor="ledger-upload"
+                style={{ 
+                  padding: '8px 16px', 
+                  borderRadius: '8px', 
+                  backgroundColor: 'white', 
+                  border: '1px solid #e2e8f0',
+                  color: '#475569',
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                <Upload size={16} /> Choose File
+              </label>
+            ) : (
+              <>
+                <button 
+                  onClick={handleRemoveFile}
+                  style={{ 
+                    padding: '8px 16px', 
+                    borderRadius: '8px', 
+                    backgroundColor: '#fee2e2', 
+                    border: 'none',
+                    color: '#ef4444',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}
+                >
+                  <X size={16} /> Remove
+                </button>
+                <button 
+                  onClick={triggerImport}
+                  disabled={importing}
+                  style={{ 
+                    padding: '8px 16px', 
+                    borderRadius: '8px', 
+                    backgroundColor: '#2563eb', 
+                    border: 'none',
+                    color: 'white',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    opacity: importing ? 0.7 : 1
+                  }}
+                >
+                  {importing ? <RefreshCw size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Upload size={16} />} 
+                  Import Ledger Transactions
+                </button>
+              </>
+            )}
+          </div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px' }}>
           {[

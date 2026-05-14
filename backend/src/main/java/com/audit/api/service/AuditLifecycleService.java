@@ -106,7 +106,7 @@ public class AuditLifecycleService {
     // ── Transaction Compliance Validation ────────────────────────────────────
 
     @Transactional
-    public void validateTransaction(UUID transactionId) {
+    public List<String> validateTransaction(UUID transactionId) {
         Transaction txn = transactionRepository.findById(transactionId).orElseThrow();
         List<String> issues = new ArrayList<>();
 
@@ -144,10 +144,25 @@ public class AuditLifecycleService {
             }
         }
 
+        // 3. Vendor Match
+        if (txn.getVendorCustomer() != null) {
+            if (txn.getPoVendor() != null && !txn.getVendorCustomer().equalsIgnoreCase(txn.getPoVendor())) {
+                issues.add("Vendor mismatch: Ledger Vendor (" + txn.getVendorCustomer() + ") vs PO Vendor (" + txn.getPoVendor() + ")");
+            }
+            if (txn.getInvoiceVendor() != null && !txn.getVendorCustomer().equalsIgnoreCase(txn.getInvoiceVendor())) {
+                issues.add("Vendor mismatch: Ledger Vendor (" + txn.getVendorCustomer() + ") vs Invoice Vendor (" + txn.getInvoiceVendor() + ")");
+            }
+        }
+
         // 4. Four-way match (Adds Bank)
         if (txn.getBankMatched() != null && txn.getBankMatched() && txn.getInvoiceAmount() != null) {
             // Check bank payment matches invoice (Simplified as we'd need bank entry amount)
-            // For now using the bankMatched flag logic from BankValidationService
+        }
+        
+        if (txn.getBankValidationRequired() != null && txn.getBankValidationRequired()) {
+            if (txn.getBankMatched() == null || !txn.getBankMatched()) {
+                issues.add("Bank Validation: Invoice payment not matched in bank statements");
+            }
         }
 
         // Update Compliance Status
@@ -163,6 +178,7 @@ public class AuditLifecycleService {
 
         transactionRepository.save(txn);
         updateProjectCompliance(txn.getProjectId());
+        return issues;
     }
 
     private boolean isOutsideTolerance(BigDecimal val1, BigDecimal val2) {

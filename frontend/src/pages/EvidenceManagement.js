@@ -319,17 +319,12 @@ function EvidenceSidebar({ transaction, projectId, onClose, onEvidenceUpdate, cu
 
   return (
     <div style={{ 
-      width: '400px', 
-      backgroundColor: 'white', 
-      borderLeft: '1px solid #e2e8f0', 
-      height: 'calc(100vh - 100px)', 
-      position: 'sticky', 
-      top: '20px',
-      display: 'flex',
-      flexDirection: 'column',
-      borderRadius: '12px',
-      boxShadow: '-4px 0 15px rgba(0,0,0,0.05)'
+      width: '420px', backgroundColor: 'white', borderLeft: '1px solid #e2e8f0', 
+      height: '100vh', position: 'fixed', right: 0, top: 0, zIndex: 1000,
+      display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 15px rgba(0,0,0,0.1)',
+      animation: 'slideIn 0.3s ease-out'
     }}>
+      <style>{`@keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }`}</style>
       <div style={{ padding: '20px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h2 style={{ fontSize: '18px', fontWeight: 'bold', margin: 0 }}>Evidence Workspace</h2>
         <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}><X size={24} /></button>
@@ -440,7 +435,20 @@ function ChecklistSection({ transaction, projectId, onUpdate }) {
           {items.map(item => (
             <div key={item.id} style={{ padding: '12px', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                <span style={{ fontSize: '13px', fontWeight: '500' }}>{item.itemName}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '13px', fontWeight: '500' }}>{item.description}</span>
+                  <span style={{ 
+                    fontSize: '10px', 
+                    padding: '2px 6px', 
+                    borderRadius: '4px', 
+                    backgroundColor: item.mandatory ? '#fee2e2' : '#f1f5f9', 
+                    color: item.mandatory ? '#ef4444' : '#64748b', 
+                    fontWeight: '600', 
+                    textTransform: 'uppercase' 
+                  }}>
+                    {item.mandatory ? 'Required' : 'Optional'}
+                  </span>
+                </div>
                 {item.provided ? <CheckCircle2 size={16} color="#10b981" /> : <Clock size={16} color="#f59e0b" />}
               </div>
               {item.provided ? (

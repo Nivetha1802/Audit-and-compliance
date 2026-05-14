@@ -65,6 +65,13 @@ public class AiAnalysisController {
         return ResponseEntity.ok(aiAnalysisService.runDuplicateDetection(projectId));
     }
 
+    /** Comprehensive Analysis: Run all 6 audit rules */
+    @PostMapping("/run-comprehensive-analysis/{projectId}")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('AUDITOR') or hasRole('COMPLIANCE_OFFICER')")
+    public ResponseEntity<Map<String, Object>> runComprehensiveAnalysis(@PathVariable UUID projectId) {
+        return ResponseEntity.ok(aiAnalysisService.runComprehensiveAnalysis(projectId));
+    }
+
     /** Evidence Validation: validate extracted evidence against transaction */
     @PostMapping("/validate-evidence/{transactionId}")
     @PreAuthorize("hasRole('ADMIN') or hasRole('AUDITOR') or hasRole('COMPLIANCE_OFFICER')")

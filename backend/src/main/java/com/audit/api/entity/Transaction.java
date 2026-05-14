@@ -53,6 +53,8 @@ public class Transaction extends BaseEntity {
     private Boolean isHighRisk = false;
     private String validationReason;
 
+    private String poVendor;
+    private String invoiceVendor;
     // Three-way match fields
     private String poNumber;
     private String grnNumber;
@@ -130,6 +132,10 @@ public class Transaction extends BaseEntity {
     public void setGrnQty(Integer v) { this.grnQty = v; }
     public Integer getInvoiceQty() { return invoiceQty; }
     public void setInvoiceQty(Integer v) { this.invoiceQty = v; }
+    public String getPoVendor() { return poVendor; }
+    public void setPoVendor(String v) { this.poVendor = v; }
+    public String getInvoiceVendor() { return invoiceVendor; }
+    public void setInvoiceVendor(String v) { this.invoiceVendor = v; }
     public LocalDate getPoDate() { return poDate; }
     public void setPoDate(LocalDate v) { this.poDate = v; }
     public LocalDate getGrnDate() { return grnDate; }

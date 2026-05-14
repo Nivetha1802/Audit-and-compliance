@@ -53,7 +53,7 @@ function EvidenceSidebar({ transaction, projectId, onClose, onEvidenceUpdate, cu
   return (
     <div style={{ 
       width: '420px', backgroundColor: 'white', borderLeft: '1px solid #e2e8f0', 
-      height: '100%', position: 'absolute', right: 0, top: 0, zIndex: 1000,
+      height: '100vh', position: 'fixed', right: 0, top: 0, zIndex: 1000,
       display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 15px rgba(0,0,0,0.1)',
       animation: 'slideIn 0.3s ease-out'
     }}>
@@ -154,7 +154,20 @@ function ChecklistSection({ transaction, projectId, onUpdate }) {
           {items.map(item => (
             <div key={item.id} style={{ padding: '12px', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                <span style={{ fontSize: '13px', fontWeight: '500' }}>{item.itemName}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '13px', fontWeight: '500' }}>{item.description}</span>
+                  <span style={{ 
+                    fontSize: '10px', 
+                    padding: '2px 6px', 
+                    borderRadius: '4px', 
+                    backgroundColor: item.mandatory ? '#fee2e2' : '#f1f5f9', 
+                    color: item.mandatory ? '#ef4444' : '#64748b', 
+                    fontWeight: '600', 
+                    textTransform: 'uppercase' 
+                  }}>
+                    {item.mandatory ? 'Required' : 'Optional'}
+                  </span>
+                </div>
                 {item.provided ? <CheckCircle2 size={16} color="#10b981" /> : <Clock size={16} color="#f59e0b" />}
               </div>
               {item.provided ? (
@@ -376,12 +389,11 @@ function ProjectsTable({ projects, transactions, onSelect }) {
               <th style={thStyle}>Project Name</th>
               <th style={thStyle}>Status</th>
               <th style={thStyle}>Audit Status</th>
-              <th style={thStyle}>Bank Entries</th>
+              <th style={{...thStyle, textAlign: 'center'}}>Action</th>
             </tr>
           </thead>
           <tbody>
             {projects.map((p, idx) => {
-              const txCount = transactions.filter(t => t.projectId === p.id).length;
               return (
                 <tr key={p.id} style={{ borderBottom: '1px solid #f9fafb' }}>
                   <td style={tdStyle}>{idx + 1}</td>
@@ -392,6 +404,14 @@ function ProjectsTable({ projects, transactions, onSelect }) {
                     </span>
                   </td>
                   <td style={tdStyle}>{p.auditStatus || 'DRAFT'}</td>
+                  <td style={{...tdStyle, textAlign: 'center'}}>
+                    <button 
+                      onClick={() => onSelect(p)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#2563eb' }}
+                    >
+                      <ChevronRight size={20} />
+                    </button>
+                  </td>
                 </tr>
               );
             })}
@@ -408,6 +428,7 @@ function BankDetail({ project, onBack, currentUser, onEvidenceUpdate }) {
   const [selectedTransaction, setSelectedTransaction] = useState(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [bankFile, setBankFile] = useState(null);
+  const fileInputRef = React.useRef(null);
   const [importing, setImporting] = useState(false);
 
   useEffect(() => { fetchTransactions(); }, [project.id]);
@@ -421,20 +442,34 @@ function BankDetail({ project, onBack, currentUser, onEvidenceUpdate }) {
     finally { setLoading(false); }
   };
 
-  const handleImport = async (e) => {
-    e.preventDefault();
+  const onFileChange = (e) => {
+    if (e.target.files[0]) {
+      setBankFile(e.target.files[0]);
+    }
+  };
+
+  const handleRemoveFile = () => {
+    setBankFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const triggerImport = async () => {
     if (!bankFile) return;
+    setImporting(true);
     try {
-      setImporting(true);
       const fd = new FormData();
       fd.append('file', bankFile);
       fd.append('projectId', project.id);
       await transactionApi.importBankStatement(fd);
-      alert('Import successful');
       setBankFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
       fetchTransactions();
-    } catch (err) { alert('Import failed'); }
-    finally { setImporting(false); }
+      alert('Import successful');
+    } catch (err) {
+      alert('Import failed');
+    } finally {
+      setImporting(false);
+    }
   };
 
   const totals = transactions.reduce((acc, t) => {
@@ -459,16 +494,112 @@ function BankDetail({ project, onBack, currentUser, onEvidenceUpdate }) {
           </div>
         </div>
 
-        <div style={{ backgroundColor: 'white', borderRadius: '12px', padding: '20px', border: '1px solid #e5e7eb', marginBottom: '24px' }}>
-           <form onSubmit={handleImport} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <input type="file" id="bankFile" style={{ display: 'none' }} onChange={e => setBankFile(e.target.files[0])} />
-              <button type="button" onClick={() => document.getElementById('bankFile').click()} style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid #e5e7eb', background: 'white', cursor: 'pointer' }}>
-                {bankFile ? bankFile.name : 'Choose Bank Statement'}
-              </button>
-              <button type="submit" disabled={importing || !bankFile} style={{ padding: '8px 16px', borderRadius: '6px', background: '#2563eb', color: 'white', border: 'none', cursor: 'pointer', opacity: importing ? 0.7 : 1 }}>
-                {importing ? 'Importing...' : 'Import Statement'}
-              </button>
-           </form>
+        <div style={{ 
+          backgroundColor: '#f8fafc', 
+          padding: '16px', 
+          borderRadius: '12px', 
+          border: '1px dashed #cbd5e1', 
+          marginBottom: '24px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ 
+              width: '40px', 
+              height: '40px', 
+              borderRadius: '8px', 
+              backgroundColor: '#eff6ff', 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center',
+              color: '#2563eb'
+            }}>
+              <FileText size={20} />
+            </div>
+            <div>
+              <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b' }}>
+                {bankFile ? bankFile.name : 'Import Bank Transactions'}
+              </div>
+              <div style={{ fontSize: '12px', color: '#64748b' }}>
+                {bankFile ? `${(bankFile.size / 1024).toFixed(2)} KB` : 'Upload your bank statement CSV file here'}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <input 
+              type="file" 
+              id="bank-upload" 
+              accept=".csv" 
+              hidden 
+              onChange={onFileChange}
+              ref={fileInputRef}
+            />
+            
+            {!bankFile ? (
+              <label 
+                htmlFor="bank-upload"
+                style={{ 
+                  padding: '8px 16px', 
+                  borderRadius: '8px', 
+                  backgroundColor: 'white', 
+                  border: '1px solid #e2e8f0',
+                  color: '#475569',
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                <Upload size={16} /> Choose File
+              </label>
+            ) : (
+              <>
+                <button 
+                  onClick={handleRemoveFile}
+                  style={{ 
+                    padding: '8px 16px', 
+                    borderRadius: '8px', 
+                    backgroundColor: '#fee2e2', 
+                    border: 'none',
+                    color: '#ef4444',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}
+                >
+                  <X size={16} /> Remove
+                </button>
+                <button 
+                  onClick={triggerImport}
+                  disabled={importing}
+                  style={{ 
+                    padding: '8px 16px', 
+                    borderRadius: '8px', 
+                    backgroundColor: '#2563eb', 
+                    border: 'none',
+                    color: 'white', 
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    cursor: 'pointer', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '8px',
+                    opacity: importing ? 0.7 : 1
+                  }}
+                >
+                  {importing ? <RefreshCw size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Upload size={16} />} 
+                  Import Bank Transactions
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px' }}>

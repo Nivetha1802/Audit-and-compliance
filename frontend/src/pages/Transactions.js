@@ -137,6 +137,50 @@ function EvidencePanel({ transaction, users, currentUser, onClose, onStatusChang
              ))}
           </div>
 
+          {activeTab === 'items' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+               {items.map(item => (
+                 <div key={item.id} style={{ padding: '12px', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '14px', fontWeight: '500' }}>{item.description}</span>
+                        <span style={{ 
+                          fontSize: '10px', 
+                          padding: '2px 6px', 
+                          borderRadius: '4px', 
+                          backgroundColor: item.mandatory ? '#fee2e2' : '#f1f5f9', 
+                          color: item.mandatory ? '#ef4444' : '#64748b', 
+                          fontWeight: '600', 
+                          textTransform: 'uppercase' 
+                        }}>
+                          {item.mandatory ? 'Required' : 'Optional'}
+                        </span>
+                     </div>
+                       {item.provided ? <span style={{ color: '#10b981' }}>✓</span> : <span style={{ color: '#f59e0b' }}>⏳</span>}
+                    </div>
+                    {item.provided && (
+                      <div style={{ marginTop: '8px', fontSize: '12px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <span>📄</span> {item.documentName || 'Evidence Uploaded'}
+                      </div>
+                    )}
+                 </div>
+               ))}
+               {items.length === 0 && <div style={{ textAlign: 'center', padding: '20px', color: '#94a3b8' }}>No evidence items required</div>}
+            </div>
+          )}
+
+          {activeTab === 'tasks' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+               {tasks.map(task => (
+                 <div key={task.id} style={{ padding: '12px', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                    <div style={{ fontWeight: '600', fontSize: '14px' }}>{task.title}</div>
+                    <div style={{ fontSize: '12px', color: '#64748b' }}>{task.status}</div>
+                 </div>
+               ))}
+               {tasks.length === 0 && <div style={{ textAlign: 'center', padding: '20px', color: '#94a3b8' }}>No tasks assigned</div>}
+            </div>
+          )}
+
           {activeTab === 'risks' && (
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
