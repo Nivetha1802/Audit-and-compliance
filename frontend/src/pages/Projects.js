@@ -11,11 +11,10 @@ const STATUS_COLORS = {
 };
 
 const AUDIT_STATUS_COLORS = {
-  DRAFT:        { bg: '#f3f4f6', text: '#374151' },
-  IN_PROGRESS:  { bg: '#fef3c7', text: '#92400e' },
-  UNDER_REVIEW: { bg: '#dbeafe', text: '#1e40af' },
-  SIGNED_OFF:   { bg: '#d1fae5', text: '#065f46' },
-  CLOSED:       { bg: '#e5e7eb', text: '#6b7280' },
+  Evidence_Collection: { bg: '#fef3c7', text: '#92400e' },
+  Internal_Audit:      { bg: '#dbeafe', text: '#1e40af' },
+  Audit_Ready:         { bg: '#d1fae5', text: '#065f46' },
+  Completed:           { bg: '#f3f4f6', text: '#374151' },
 };
 
 const RISK_COLORS = {
@@ -55,6 +54,16 @@ export default function Projects() {
       console.error('Error fetching data', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleAuditStatusChange = async (id, newStatus) => {
+    try {
+      await projectApi.updateAuditStatus(id, newStatus);
+      setProjects(prev => prev.map(p => p.id === id ? { ...p, auditStatus: newStatus } : p));
+    } catch (err) {
+      console.error('Failed to update audit status', err);
+      alert('Failed to update audit status');
     }
   };
 
@@ -195,7 +204,7 @@ export default function Projects() {
               <th style={{ padding: '1rem 1.5rem', fontSize: '0.75rem', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Project Details</th>
               <th style={{ padding: '1rem 1.5rem', fontSize: '0.75rem', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Timeline & Budget</th>
               <th style={{ padding: '1rem 1.5rem', fontSize: '0.75rem', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Status</th>
-              <th style={{ padding: '1rem 1.5rem', fontSize: '0.75rem', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Audit & Risk</th>
+              <th style={{ padding: '1rem 1.5rem', fontSize: '0.75rem', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Audit Stage</th>
               <th style={{ padding: '1rem 1.5rem', fontSize: '0.75rem', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>Actions</th>
             </tr>
           </thead>
@@ -203,7 +212,7 @@ export default function Projects() {
             {projects.map((p, idx) => {
               const colors = STATUS_COLORS[p.status] || { bg: '#f3f4f6', text: '#374151' };
               const riskColors = RISK_COLORS[p.riskStatus] || { bg: '#f3f4f6', text: '#374151' };
-              const ac = AUDIT_STATUS_COLORS[p.auditStatus || 'DRAFT'] || AUDIT_STATUS_COLORS.DRAFT;
+              const ac = AUDIT_STATUS_COLORS[p.auditStatus] || AUDIT_STATUS_COLORS.Evidence_Collection;
 
               return (
                 <tr key={p.id} style={{ borderBottom: '1px solid #f3f4f6', transition: 'background-color 0.2s' }}>
@@ -231,9 +240,27 @@ export default function Projects() {
                   <td style={{ padding: '1rem 1.5rem' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <span style={{ padding: '0.25rem 0.5rem', borderRadius: '0.375rem', fontSize: '0.7rem', fontWeight: '700', backgroundColor: ac.bg, color: ac.text, textTransform: 'uppercase' }}>
-                          {p.auditStatus || 'DRAFT'}
-                        </span>
+                        <select
+                          value={p.auditStatus || 'Evidence_Collection'}
+                          onChange={(e) => handleAuditStatusChange(p.id, e.target.value)}
+                          style={{
+                            padding: '0.25rem 0.5rem',
+                            borderRadius: '0.375rem',
+                            fontSize: '0.7rem',
+                            fontWeight: '700',
+                            backgroundColor: ac.bg,
+                            color: ac.text,
+                            border: 'none',
+                            cursor: 'pointer',
+                            outline: 'none',
+                            textTransform: 'uppercase'
+                          }}
+                        >
+                          <option value="Evidence_Collection">Evidence Collection</option>
+                          <option value="Internal_Audit">Internal Audit</option>
+                          <option value="Audit_Ready">Audit Ready</option>
+                          <option value="Completed">Completed</option>
+                        </select>
                         <span style={{ fontSize: '0.875rem', fontWeight: '700', color: '#111827' }}>{Math.round(p.complianceScore || 0)}%</span>
                       </div>
                       <span style={{ padding: '0.25rem 0.5rem', borderRadius: '0.375rem', fontSize: '0.7rem', fontWeight: '700', backgroundColor: riskColors.bg, color: riskColors.text, width: 'fit-content' }}>

@@ -8,6 +8,7 @@ import com.audit.api.repository.RiskRepository;
 import com.audit.api.repository.ProjectRepository;
 import com.audit.api.repository.UserRepository;
 import com.audit.api.repository.AuditActionLogRepository;
+import com.audit.api.util.SecurityUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,31 +23,44 @@ public class RiskService {
     private final EmailService emailService;
     private final AuditTaskService auditTaskService;
     private final AuditActionLogRepository auditActionLogRepository;
+    private final SecurityUtils securityUtils;
 
     public RiskService(RiskRepository riskRepository,
                        ProjectRepository projectRepository,
                        UserRepository userRepository,
                        EmailService emailService,
                        AuditTaskService auditTaskService,
-                       AuditActionLogRepository auditActionLogRepository) {
+                       AuditActionLogRepository auditActionLogRepository,
+                       SecurityUtils securityUtils) {
         this.riskRepository = riskRepository;
         this.projectRepository = projectRepository;
         this.userRepository = userRepository;
         this.emailService = emailService;
         this.auditTaskService = auditTaskService;
         this.auditActionLogRepository = auditActionLogRepository;
+        this.securityUtils = securityUtils;
     }
 
     public List<Risk> getAllRisks() {
-        return riskRepository.findAll();
+        return riskRepository.findByOrganizationId(securityUtils.getCurrentOrganizationId());
     }
 
     public List<Risk> getRisksByProject(UUID projectId) {
-        return riskRepository.findByProjectId(projectId);
+        UUID orgId = securityUtils.getCurrentOrganizationId();
+        return riskRepository.findByProjectId(projectId).stream()
+                .filter(r -> orgId.equals(r.getOrganizationId()))
+                .toList();
     }
 
     @Transactional
     public Risk createRisk(Risk risk) {
+        if (risk.getOrganizationId() == null) {
+            risk.setOrganizationId(securityUtils.getCurrentOrganizationId());
+        }
+        if (risk.getRiskCreatorId() == null) {
+            risk.setRiskCreatorId(securityUtils.getCurrentUser().getId());
+        }
+
         Risk savedRisk = riskRepository.save(risk);
         
         // Log action
@@ -54,9 +68,9 @@ public class RiskService {
                 .entityType("RISK")
                 .entityId(savedRisk.getId())
                 .actionType("CREATED")
-                .performedBy(risk.getRiskCreatorId())
-                .details("Risk created: " + risk.getTitle())
-                .projectId(risk.getProjectId())
+                .performedBy(savedRisk.getRiskCreatorId())
+                .details("Risk created: " + savedRisk.getTitle())
+                .projectId(savedRisk.getProjectId())
                 .build());
 
         // Automatically create a task for the project owner to address this risk

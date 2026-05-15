@@ -49,6 +49,13 @@ public class Transaction extends BaseEntity {
     @Column(name = "bank_matched")
     private Boolean bankMatched = false;
 
+    @Transient
+    private String vendorName;
+
+    @Transient
+    public String getVendorName() { return vendorName; }
+    public void setVendorName(String vendorName) { this.vendorName = vendorName; }
+    
     private Boolean bankValidationRequired = false;
     private Boolean isHighRisk = false;
     private String validationReason;
@@ -69,6 +76,12 @@ public class Transaction extends BaseEntity {
     private LocalDate grnDate;
     private LocalDate invoiceDate;
     private String complianceStatus;
+
+    @Column(name = "source")
+    private String source;
+
+    @Column(name = "audit_status")
+    private String auditStatus;
 
     public Transaction() {}
 
@@ -144,4 +157,8 @@ public class Transaction extends BaseEntity {
     public void setInvoiceDate(LocalDate v) { this.invoiceDate = v; }
     public String getComplianceStatus() { return complianceStatus; }
     public void setComplianceStatus(String v) { this.complianceStatus = v; }
+    public String getSource() { return source; }
+    public void setSource(String source) { this.source = source; }
+    public String getAuditStatus() { return auditStatus; }
+    public void setAuditStatus(String s) { this.auditStatus = s; }
 }

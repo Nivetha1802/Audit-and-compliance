@@ -7,5 +7,6 @@ import java.util.UUID;
 
 public interface AuditActionLogRepository extends JpaRepository<AuditActionLog, UUID> {
     List<AuditActionLog> findByProjectIdOrderByCreatedAtDesc(UUID projectId);
+    List<AuditActionLog> findTop30ByProjectIdOrderByCreatedAtDesc(UUID projectId);
     List<AuditActionLog> findByEntityIdOrderByCreatedAtDesc(UUID entityId);
 }

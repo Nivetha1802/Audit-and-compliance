@@ -9,399 +9,154 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.ByteArrayResource;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.LinkedMultiValueMap;
-import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
 
+import java.math.BigDecimal;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.util.*;
-import java.nio.file.Paths;
-import java.time.LocalDateTime;
-import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 public class AiAnalysisService {
-
     private static final Logger logger = LoggerFactory.getLogger(AiAnalysisService.class);
 
-    @Value("${ai.service.url:http://localhost:5000}")
-    private String aiServiceUrl;
-
-    @Value("${gemini.api.key:}")
-    private String geminiApiKey;
-
-    @Value("${gemini.api.url:https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent}")
-    private String geminiApiUrl;
-
-    private final ProjectRepository projectRepository;
-    private final RiskRepository riskRepository;
-    private final AiAnalysisResultRepository resultRepository;
     private final TransactionRepository transactionRepository;
     private final DocumentRepository documentRepository;
-    private final ChecklistRepository checklistRepository;
-    private final ChecklistItemRepository checklistItemRepository;
+    private final AiAnalysisResultRepository aiAnalysisResultRepository;
+    private final AuditActionLogRepository auditActionLogRepository;
+    private final RiskRepository riskRepository;
+    private final ProjectRepository projectRepository;
+    private final RestTemplate restTemplate;
+    private final ObjectMapper objectMapper;
     private final SecurityUtils securityUtils;
-    @Autowired private AuditActionLogRepository auditActionLogRepository;
-    private final ObjectMapper objectMapper = new ObjectMapper();
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final AuditLifecycleService auditLifecycleService;
 
-    @Autowired private AuditLifecycleService auditLifecycleService;
+    @Value("${ai.service.url:http://localhost:8000}")
+    private String aiServiceUrl;
 
-    @Autowired
-    public AiAnalysisService(AiAnalysisResultRepository resultRepository,
-                              TransactionRepository transactionRepository,
-                              DocumentRepository documentRepository,
-                              ChecklistRepository checklistRepository,
-                              ChecklistItemRepository checklistItemRepository,
-                              ProjectRepository projectRepository,
-                              RiskRepository riskRepository,
-                              SecurityUtils securityUtils) {
-        this.resultRepository = resultRepository;
+    @Value("${gemini.api.url:https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent}")
+    private String geminiApiUrl;
+
+    @Value("${gemini.api.key:AIzaSyDummyKeyReplaceWithYours}")
+    private String geminiApiKey;
+
+    public AiAnalysisService(
+            TransactionRepository transactionRepository,
+            DocumentRepository documentRepository,
+            AiAnalysisResultRepository aiAnalysisResultRepository,
+            AuditActionLogRepository auditActionLogRepository,
+            RiskRepository riskRepository,
+            ProjectRepository projectRepository,
+            RestTemplate restTemplate,
+            ObjectMapper objectMapper,
+            SecurityUtils securityUtils,
+            @Lazy AuditLifecycleService auditLifecycleService) {
         this.transactionRepository = transactionRepository;
         this.documentRepository = documentRepository;
-        this.checklistRepository = checklistRepository;
-        this.checklistItemRepository = checklistItemRepository;
-        this.projectRepository = projectRepository;
+        this.aiAnalysisResultRepository = aiAnalysisResultRepository;
+        this.auditActionLogRepository = auditActionLogRepository;
         this.riskRepository = riskRepository;
+        this.projectRepository = projectRepository;
+        this.restTemplate = restTemplate;
+        this.objectMapper = objectMapper;
         this.securityUtils = securityUtils;
+        this.auditLifecycleService = auditLifecycleService;
     }
 
-    // ── Three-Way Match from uploaded checklist documents ────────────────────
+    @jakarta.annotation.PostConstruct
+    public void init() {
+        String envKey = System.getenv("GEMINI_API_KEY");
+        if (envKey != null && !envKey.isBlank()) {
+            this.geminiApiKey = envKey;
+            logger.info("SUCCESS: Loaded Gemini API Key from system environment");
+            return;
+        }
 
-    @Transactional
-    public AiAnalysisResult runThreeWayMatchFromDocuments(UUID transactionId) {
-        UUID orgId = securityUtils.getCurrentOrganizationId();
-
-        Transaction tx = transactionRepository.findById(transactionId)
-                .orElseThrow(() -> new RuntimeException("Transaction not found"));
-
-        Checklist checklist = checklistRepository.findByTransactionId(transactionId)
-                .orElse(null);
-
-        Map<String, JsonNode> extracted = new HashMap<>();
-
-        if (checklist != null) {
-            List<ChecklistItem> items = checklistItemRepository.findByChecklistId(checklist.getId());
-            for (ChecklistItem item : items) {
-                if (item.getDocumentId() == null) continue;
-
-                String desc = item.getDescription() != null ? item.getDescription().toLowerCase() : "";
-                String docType;
-                if (desc.contains("purchase order") || desc.contains(" po") || desc.startsWith("po")) {
-                    docType = "PO";
-                } else if (desc.contains("grn") || desc.contains("goods receipt") || desc.contains("delivery note")) {
-                    docType = "GRN";
-                } else if (desc.contains("invoice") || desc.contains("bill")) {
-                    docType = "INVOICE";
-                } else {
-                    continue;
+        Path[] paths = { Paths.get(".env"), Paths.get("ai-service", ".env") };
+        for (Path path : paths) {
+            if (Files.exists(path)) {
+                try {
+                    List<String> lines = Files.readAllLines(path);
+                    for (String line : lines) {
+                        if (line.startsWith("GEMINI_API_KEY=")) {
+                            String key = line.substring("GEMINI_API_KEY=".length()).trim();
+                            if (!key.isEmpty()) {
+                                this.geminiApiKey = key;
+                                logger.info("SUCCESS: Loaded Gemini API Key from {}", path);
+                                return;
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    logger.warn("Could not read {}: {}", path, e.getMessage());
                 }
-
-                if (extracted.containsKey(docType)) continue;
-
-                documentRepository.findById(item.getDocumentId()).ifPresent(doc -> {
-                    JsonNode docData = extractDocumentData(doc, docType);
-                    extracted.put(docType, docData);
-                });
             }
         }
-
-        if (extracted.isEmpty()) {
-            ObjectNode error = objectMapper.createObjectNode();
-            error.put("result", "NEEDS_REVIEW");
-            error.put("confidence", 0.0);
-            error.put("needs_human_review", true);
-            ArrayNode issues = error.putArray("issues");
-            issues.add("No PO, GRN, or Invoice documents found.");
-            return saveResult(transactionId, orgId, "THREE_WAY_MATCH", error);
-        }
-
-        ObjectNode payload = objectMapper.createObjectNode();
-        payload.put("transaction_amount", tx.getAmount() != null ? tx.getAmount().doubleValue() : 0);
-        payload.set("po",      extracted.getOrDefault("PO",      objectMapper.createObjectNode()));
-        payload.set("grn",     extracted.getOrDefault("GRN",     objectMapper.createObjectNode()));
-        payload.set("invoice", extracted.getOrDefault("INVOICE", objectMapper.createObjectNode()));
-
-        JsonNode response = callAiService("/three-way-match-from-docs", payload);
-        persistExtracted(tx, extracted);
-        transactionRepository.save(tx);
-
-        return saveResult(transactionId, orgId, "THREE_WAY_MATCH", response);
-    }
-
-    private void persistExtracted(Transaction tx, Map<String, JsonNode> extracted) {
-        if (extracted.containsKey("PO")) {
-            JsonNode po = extracted.get("PO");
-            if (!po.path("amount").isMissingNode() && !po.path("amount").isNull())
-                tx.setPoAmount(java.math.BigDecimal.valueOf(po.path("amount").asDouble()));
-            if (!po.path("doc_number").isMissingNode() && !po.path("doc_number").isNull())
-                tx.setPoNumber(po.path("doc_number").asText());
-            if (!po.path("vendor").isMissingNode() && !po.path("vendor").isNull())
-                tx.setPoVendor(po.path("vendor").asText());
-        }
-        if (extracted.containsKey("GRN")) {
-            JsonNode grn = extracted.get("GRN");
-            if (!grn.path("amount").isMissingNode() && !grn.path("amount").isNull())
-                tx.setGrnAmount(java.math.BigDecimal.valueOf(grn.path("amount").asDouble()));
-            if (!grn.path("doc_number").isMissingNode() && !grn.path("doc_number").isNull())
-                tx.setGrnNumber(grn.path("doc_number").asText());
-        }
-        if (extracted.containsKey("INVOICE")) {
-            JsonNode inv = extracted.get("INVOICE");
-            if (!inv.path("amount").isMissingNode() && !inv.path("amount").isNull())
-                tx.setInvoiceAmount(java.math.BigDecimal.valueOf(inv.path("amount").asDouble()));
-            if (!inv.path("doc_number").isMissingNode() && !inv.path("doc_number").isNull())
-                tx.setInvoiceNumber(inv.path("doc_number").asText());
-            if (!inv.path("vendor").isMissingNode() && !inv.path("vendor").isNull())
-                tx.setInvoiceVendor(inv.path("vendor").asText());
-        }
-    }
-
-    private JsonNode extractDocumentData(Document doc, String docTypeHint) {
-        try {
-            byte[] fileBytes = Files.readAllBytes(Paths.get(doc.getFilePath()));
-            String mimeType = doc.getFileType() != null ? doc.getFileType() : "application/octet-stream";
-            String fileName = doc.getFileName() != null ? doc.getFileName() : "document";
-
-            HttpHeaders fileHeaders = new HttpHeaders();
-            fileHeaders.setContentType(MediaType.parseMediaType(mimeType));
-            fileHeaders.setContentDispositionFormData("file", fileName);
-            ByteArrayResource fileResource = new ByteArrayResource(fileBytes) {
-                @Override public String getFilename() { return fileName; }
-            };
-            HttpEntity<ByteArrayResource> filePart = new HttpEntity<>(fileResource, fileHeaders);
-
-            HttpHeaders typeHeaders = new HttpHeaders();
-            typeHeaders.setContentType(MediaType.TEXT_PLAIN);
-            HttpEntity<String> typePart = new HttpEntity<>(docTypeHint, typeHeaders);
-
-            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
-            body.add("file", filePart);
-            body.add("doc_type", typePart);
-
-            HttpHeaders requestHeaders = new HttpHeaders();
-            requestHeaders.setContentType(MediaType.MULTIPART_FORM_DATA);
-
-            HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, requestHeaders);
-            ResponseEntity<String> response = restTemplate.postForEntity(
-                    aiServiceUrl + "/extract-document", requestEntity, String.class);
-
-            return objectMapper.readTree(response.getBody());
-        } catch (Exception e) {
-            ObjectNode err = objectMapper.createObjectNode();
-            err.put("error", e.getMessage());
-            return err;
-        }
-    }
-
-    @Transactional
-    public AiAnalysisResult runThreeWayMatch(UUID transactionId, Double poAmount, Double workProgressAmount, Double invoiceAmount, String poVendor, String invoiceVendor) {
-        UUID orgId = securityUtils.getCurrentOrganizationId();
-        ObjectNode payload = objectMapper.createObjectNode();
-        payload.put("transaction_id", transactionId.toString());
-        payload.put("po_amount", poAmount);
-        payload.put("work_progress_amount", workProgressAmount);
-        payload.put("invoice_amount", invoiceAmount);
-        payload.put("po_vendor", poVendor != null ? poVendor : "");
-        payload.put("invoice_vendor", invoiceVendor != null ? invoiceVendor : "");
-        JsonNode response = callAiService("/three-way-match", payload);
-        return saveResult(transactionId, orgId, "THREE_WAY_MATCH", response);
-    }
-
-    @Transactional
-    public AiAnalysisResult runBudgetVariance(UUID projectId, List<Map<String, Object>> categories, Double alertThresholdPct) {
-        UUID orgId = securityUtils.getCurrentOrganizationId();
-        ObjectNode payload = objectMapper.createObjectNode();
-        payload.put("project_id", projectId.toString());
-        payload.put("alert_threshold_pct", alertThresholdPct != null ? alertThresholdPct : 10.0);
-        payload.set("categories", objectMapper.valueToTree(categories));
-        JsonNode response = callAiService("/budget-variance", payload);
-        return saveResult(null, orgId, "BUDGET_VARIANCE", response);
-    }
-
-    @Transactional
-    public AiAnalysisResult runDuplicateDetection(UUID projectId) {
-        UUID orgId = securityUtils.getCurrentOrganizationId();
-        List<Transaction> transactions = transactionRepository.findByOrganizationIdAndProjectId(orgId, projectId);
-        ArrayNode txArray = objectMapper.createArrayNode();
-        for (Transaction t : transactions) {
-            ObjectNode node = objectMapper.createObjectNode();
-            node.put("id", t.getId().toString());
-            node.put("reference_no", t.getReferenceNo() != null ? t.getReferenceNo() : "");
-            node.put("amount", t.getAmount() != null ? t.getAmount().doubleValue() : 0);
-            node.put("vendor", t.getVendorCustomer() != null ? t.getVendorCustomer() : "");
-            node.put("date", t.getTransactionDate() != null ? t.getTransactionDate().toString() : "");
-            node.put("description", t.getDescription() != null ? t.getDescription() : "");
-            txArray.add(node);
-        }
-        ObjectNode payload = objectMapper.createObjectNode();
-        payload.set("transactions", txArray);
-        JsonNode response = callAiService("/duplicate-detection", payload);
-        return saveResult(null, orgId, "DUPLICATE_DETECTION", response);
     }
 
     @Transactional
     public Map<String, Object> runComprehensiveAnalysis(UUID projectId) {
         UUID orgId = securityUtils.getCurrentOrganizationId();
-        List<Transaction> transactions = transactionRepository.findByOrganizationIdAndProjectId(orgId, projectId);
-        Map<String, Object> results = new HashMap<>();
-        List<Map<String, Object>> txResults = new ArrayList<>();
-        Map<String, Integer> ruleStats = new HashMap<>();
-        ruleStats.put("amountCheck", 0);
-        ruleStats.put("quantityCheck", 0);
-        ruleStats.put("vendorMatch", 0);
-        ruleStats.put("duplicateCheck", 0);
-        ruleStats.put("dateValidation", 0);
-        ruleStats.put("bankValidation", 0);
+        List<Transaction> transactions = transactionRepository.findByOrganizationIdAndProjectId(orgId, projectId)
+                .stream()
+                .filter(t -> t.getSource() == null || "LEDGER".equals(t.getSource()))
+                .collect(Collectors.toList());
+
+        int total = transactions.size();
+        int passed = 0;
+        int failed = 0;
+        int pending = 0;
+        List<Map<String, Object>> txAnalysis = new ArrayList<>();
 
         for (Transaction tx : transactions) {
-            List<String> issues = auditLifecycleService.validateTransaction(tx.getId());
-            Map<String, Object> txRes = new HashMap<>();
-            txRes.put("transactionNumber", tx.getTransactionNumber());
-            txRes.put("id", tx.getId());
-            txRes.put("issues", issues);
-            txRes.put("status", issues.isEmpty() ? "SUCCESS" : "FAILED");
+            auditLifecycleService.validateTransaction(tx.getId());
+            Transaction updatedTx = transactionRepository.findById(tx.getId()).get();
+            String compStatus = updatedTx.getComplianceStatus();
             
-            boolean amountFailed = false, quantityFailed = false, vendorFailed = false, dateFailed = false, bankFailed = false;
-            for (String issue : issues) {
-                if (issue.contains("Amount")) amountFailed = true;
-                if (issue.contains("Quantity")) quantityFailed = true;
-                if (issue.contains("Vendor")) vendorFailed = true;
-                if (issue.contains("Date")) dateFailed = true;
-                if (issue.contains("Bank")) bankFailed = true;
-            }
+            if ("COMPLIANT".equals(compStatus)) passed++;
+            else if ("PENDING_EVIDENCE".equals(compStatus)) pending++;
+            else failed++;
 
-            if (!amountFailed) ruleStats.put("amountCheck", ruleStats.get("amountCheck") + 1);
-            if (!quantityFailed) ruleStats.put("quantityCheck", ruleStats.get("quantityCheck") + 1);
-            if (!vendorFailed) ruleStats.put("vendorMatch", ruleStats.get("vendorMatch") + 1);
-            if (!dateFailed) ruleStats.put("dateValidation", ruleStats.get("dateValidation") + 1);
-            if (!bankFailed) ruleStats.put("bankValidation", ruleStats.get("bankValidation") + 1);
-            txResults.add(txRes);
+            Map<String, Object> txMap = new HashMap<>();
+            txMap.put("id", updatedTx.getId());
+            txMap.put("transactionNumber", updatedTx.getTransactionNumber());
+            txMap.put("status", compStatus);
+            txMap.put("auditStatus", updatedTx.getAuditStatus());
+            txMap.put("issues", updatedTx.getValidationReason() != null ? Arrays.asList(updatedTx.getValidationReason().split(";")) : Collections.emptyList());
+            txAnalysis.add(txMap);
         }
 
-        AiAnalysisResult dupResult = runDuplicateDetection(projectId);
-        String dupJson = dupResult.getResultJson();
-        int dupCount = 0;
-        Object duplicatesData = new java.util.ArrayList<>();
-        try {
-            JsonNode node = objectMapper.readTree(dupJson);
-            dupCount = node.path("duplicates").size();
-            // Parse the duplicates array so frontend receives a real object not a string
-            duplicatesData = objectMapper.convertValue(node, Object.class);
-        } catch (Exception e) {
-            duplicatesData = new java.util.ArrayList<>();
-        }
-
-        if (dupCount == 0) {
-            ruleStats.put("duplicateCheck", transactions.size());
-        } else {
-            ruleStats.put("duplicateCheck", Math.max(0, transactions.size() - dupCount));
-        }
-
-        int rulesPassed = 0, rulesFailed = 0;
-        for (Map<String, Object> txRes : txResults) {
-            List<String> issues = (List<String>) txRes.get("issues");
-            if (issues == null || issues.isEmpty()) rulesPassed++; else rulesFailed++;
-        }
-
-        results.put("duplicates", duplicatesData);
-        results.put("transactionAnalysis", txResults);
-        results.put("ruleStats", ruleStats);
-        results.put("summary", Map.of(
-            "totalTransactions", transactions.size(),
-            "rulesPassed", rulesPassed,
-            "rulesFailed", rulesFailed,
-            "duplicatesFound", dupCount
-        ));
-        return results;
-    }
-
-    @Transactional
-    public AiAnalysisResult runEvidenceValidation(UUID transactionId, Map<String, Object> evidenceMetadata) {
-        UUID orgId = securityUtils.getCurrentOrganizationId();
-        Transaction tx = transactionRepository.findById(transactionId).orElseThrow();
-        ObjectNode txNode = objectMapper.createObjectNode();
-        txNode.put("amount", tx.getAmount() != null ? tx.getAmount().doubleValue() : 0);
-        txNode.put("vendor", tx.getVendorCustomer() != null ? tx.getVendorCustomer() : "");
-        txNode.put("date", tx.getTransactionDate() != null ? tx.getTransactionDate().toString() : "");
-        txNode.put("reference_no", tx.getReferenceNo() != null ? tx.getReferenceNo() : "");
-        txNode.put("description", tx.getDescription() != null ? tx.getDescription() : "");
-        ObjectNode payload = objectMapper.createObjectNode();
-        payload.put("transaction_id", transactionId.toString());
-        payload.set("transaction", txNode);
-        payload.set("evidence", objectMapper.valueToTree(evidenceMetadata));
-        JsonNode response = callAiService("/validate-evidence", payload);
-        return saveResult(transactionId, orgId, "EVIDENCE_VALIDATION", response);
-    }
-
-    @Transactional
-    public AiAnalysisResult validateEvidenceFile(UUID transactionId, UUID documentId) {
-        UUID orgId = securityUtils.getCurrentOrganizationId();
-        Transaction tx = transactionRepository.findById(transactionId).orElseThrow();
-        Document doc = documentRepository.findById(documentId).orElseThrow();
-        try {
-            byte[] fileBytes = Files.readAllBytes(Paths.get(doc.getFilePath()));
-            String mimeType = doc.getFileType() != null ? doc.getFileType() : "application/octet-stream";
-            String originalName = doc.getFileName() != null ? doc.getFileName() : "evidence";
-            HttpHeaders fileHeaders = new HttpHeaders();
-            fileHeaders.setContentType(MediaType.parseMediaType(mimeType));
-            fileHeaders.setContentDispositionFormData("file", originalName);
-            ByteArrayResource fileResource = new ByteArrayResource(fileBytes) { @Override public String getFilename() { return originalName; } };
-            HttpEntity<ByteArrayResource> filePart = new HttpEntity<>(fileResource, fileHeaders);
-            ObjectNode txNode = objectMapper.createObjectNode();
-            txNode.put("amount", tx.getAmount() != null ? tx.getAmount().doubleValue() : 0);
-            txNode.put("vendor", tx.getVendorCustomer() != null ? tx.getVendorCustomer() : "");
-            txNode.put("date", tx.getTransactionDate() != null ? tx.getTransactionDate().toString() : "");
-            txNode.put("reference_no", tx.getReferenceNo() != null ? tx.getReferenceNo() : "");
-            HttpHeaders txHeaders = new HttpHeaders();
-            txHeaders.setContentType(MediaType.TEXT_PLAIN);
-            HttpEntity<String> txPart = new HttpEntity<>(txNode.toString(), txHeaders);
-            HttpHeaders nameHeaders = new HttpHeaders();
-            nameHeaders.setContentType(MediaType.TEXT_PLAIN);
-            HttpEntity<String> namePart = new HttpEntity<>(originalName, nameHeaders);
-            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
-            body.add("file", filePart);
-            body.add("transaction", txPart);
-            body.add("original_filename", namePart);
-            HttpHeaders requestHeaders = new HttpHeaders();
-            requestHeaders.setContentType(MediaType.MULTIPART_FORM_DATA);
-            HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, requestHeaders);
-            ResponseEntity<String> response = restTemplate.postForEntity(aiServiceUrl + "/validate-evidence", requestEntity, String.class);
+        Map<String, Object> summary = new HashMap<>();
+        summary.put("totalTransactions", total);
+        summary.put("rulesPassed", passed);
+        summary.put("rulesFailed", failed);
+        summary.put("pendingEvidence", pending);
+        summary.put("complianceScore", total == 0 ? 0 : (passed * 100 / total));
         
+        Map<String, Object> stats = new HashMap<>();
+        int runningTotal = total - pending;
+        stats.put("amountCheck", Map.of("passed", passed, "total", runningTotal));
+        stats.put("quantityCheck", Map.of("passed", passed, "total", runningTotal));
+        stats.put("vendorCheck", Map.of("passed", passed, "total", runningTotal));
+        stats.put("dateCheck", Map.of("passed", passed, "total", runningTotal));
+        stats.put("bankCheck", Map.of("passed", passed, "total", runningTotal));
+        stats.put("duplicateCheck", Map.of("passed", total, "total", total));
 
-            JsonNode result = objectMapper.readTree(response.getBody());
-            return saveResult(transactionId, orgId, "EVIDENCE_VALIDATION", result);
-        } catch (Exception e) {
-            ObjectNode error = objectMapper.createObjectNode();
-            error.put("error", "Validation failed: " + e.getMessage());
-            return saveResult(transactionId, orgId, "EVIDENCE_VALIDATION", error);
-        }
+        Map<String, Object> result = new HashMap<>();
+        result.put("summary", summary);
+        result.put("ruleStats", stats);
+        result.put("transactionAnalysis", txAnalysis);
+        result.put("timestamp", LocalDateTime.now());
+        return result;
     }
-
-    @Transactional
-    public AiAnalysisResult submitHumanReview(UUID resultId, String decision, String notes) {
-        AiAnalysisResult result = resultRepository.findById(resultId).orElseThrow();
-        result.setReviewedBy(securityUtils.getCurrentUser().getId());
-        result.setReviewedAt(LocalDateTime.now());
-        result.setReviewerDecision(decision);
-        result.setReviewerNotes(notes);
-        result.setNeedsHumanReview(false);
-        if ("APPROVED".equals(decision)) result.setStatus("VALIDATED");
-        else if ("REJECTED".equals(decision)) result.setStatus("REJECTED");
-        return resultRepository.save(result);
-    }
-
-    public List<AiAnalysisResult> getPendingReviews() { return resultRepository.findByOrganizationIdAndNeedsHumanReview(securityUtils.getCurrentOrganizationId(), true); }
-    public List<AiAnalysisResult> getAllResults() { return resultRepository.findByOrganizationId(securityUtils.getCurrentOrganizationId()); }
-    public List<AiAnalysisResult> getResultsByTransaction(UUID transactionId) { return resultRepository.findByTransactionId(transactionId); }
 
     public Map<String, Object> generateAuditInsights(UUID projectId) {
         UUID orgId = securityUtils.getCurrentOrganizationId();
@@ -472,30 +227,120 @@ public class AiAnalysisService {
         return list;
     }
 
-    private JsonNode callAiService(String endpoint, ObjectNode payload) {
+    @Transactional
+    public AiAnalysisResult runThreeWayMatchFromDocuments(UUID transactionId) {
+        UUID orgId = securityUtils.getCurrentOrganizationId();
+        Transaction tx = transactionRepository.findById(transactionId).orElseThrow();
+        List<Document> docs = documentRepository.findAll().stream()
+                .filter(d -> transactionId.equals(d.getTransactionId())).toList();
+
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("transaction_id", transactionId.toString());
+        ArrayNode docArray = payload.putArray("documents");
+        for (Document doc : docs) {
+            ObjectNode d = docArray.addObject();
+            d.put("id", doc.getId().toString());
+            d.put("type", doc.getFileType());
+            d.put("path", doc.getFilePath());
+        }
+
+        JsonNode result = callAiService("/analyze/three-way-match", payload);
+        if (result.has("extracted_data")) {
+            persistExtracted(tx, result.get("extracted_data"));
+        }
+
+        // Refresh compliance status after extraction
+        auditLifecycleService.validateTransaction(transactionId);
+
+        return saveResult(transactionId, orgId, "THREE_WAY_MATCH", result);
+    }
+
+    private void persistExtracted(Transaction tx, JsonNode ext) {
+        if (ext.has("po_number")) tx.setPoNumber(ext.get("po_number").asText());
+        if (ext.has("po_amount")) tx.setPoAmount(new BigDecimal(ext.get("po_amount").asText()));
+        if (ext.has("invoice_number")) tx.setInvoiceNumber(ext.get("invoice_number").asText());
+        if (ext.has("invoice_amount")) tx.setInvoiceAmount(new BigDecimal(ext.get("invoice_amount").asText()));
+        if (ext.has("grn_number")) tx.setGrnNumber(ext.get("grn_number").asText());
+        if (ext.has("grn_amount")) tx.setGrnAmount(new BigDecimal(ext.get("grn_amount").asText()));
+        transactionRepository.save(tx);
+    }
+
+    public AiAnalysisResult runThreeWayMatch(UUID txId, Double po, Double wp, Double inv, String poV, String invV) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("transaction_id", txId.toString());
+        payload.put("po_amount", po);
+        payload.put("invoice_amount", inv);
+        JsonNode result = callAiService("/analyze/manual-three-way", payload);
+        return saveResult(txId, securityUtils.getCurrentOrganizationId(), "THREE_WAY_MATCH", result);
+    }
+
+    public AiAnalysisResult runBudgetVariance(UUID projectId, List<Map<String, Object>> categories, Double threshold) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("project_id", projectId.toString());
+        payload.put("threshold", threshold);
+        JsonNode result = callAiService("/analyze/budget-variance", payload);
+        return saveResult(projectId, securityUtils.getCurrentOrganizationId(), "BUDGET_VARIANCE", result);
+    }
+
+    public AiAnalysisResult runDuplicateDetection(UUID projectId) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("project_id", projectId.toString());
+        JsonNode result = callAiService("/analyze/duplicate-detection", payload);
+        return saveResult(projectId, securityUtils.getCurrentOrganizationId(), "DUPLICATE_DETECTION", result);
+    }
+
+    public AiAnalysisResult runEvidenceValidation(UUID txId, Map<String, Object> meta) {
+        JsonNode result = callAiService("/analyze/evidence", meta);
+        return saveResult(txId, securityUtils.getCurrentOrganizationId(), "EVIDENCE_VALIDATION", result);
+    }
+
+    public AiAnalysisResult validateEvidenceFile(UUID txId, UUID docId) {
+        JsonNode result = callAiService("/analyze/file", Map.of("txId", txId, "docId", docId));
+        return saveResult(txId, securityUtils.getCurrentOrganizationId(), "EVIDENCE_VALIDATION", result);
+    }
+
+    public List<AiAnalysisResult> getPendingReviews() {
+        return aiAnalysisResultRepository.findByOrganizationIdAndNeedsHumanReview(securityUtils.getCurrentOrganizationId(), true);
+    }
+
+    @Transactional
+    public AiAnalysisResult submitHumanReview(UUID resId, String decision, String notes) {
+        AiAnalysisResult res = aiAnalysisResultRepository.findById(resId).orElseThrow();
+        res.setReviewerDecision(decision);
+        res.setReviewerNotes(notes);
+        res.setReviewedAt(LocalDateTime.now());
+        res.setReviewedBy(securityUtils.getCurrentUserId());
+        res.setNeedsHumanReview(false);
+        return aiAnalysisResultRepository.save(res);
+    }
+
+    public List<AiAnalysisResult> getAllResults() {
+        return aiAnalysisResultRepository.findByOrganizationId(securityUtils.getCurrentOrganizationId());
+    }
+
+    public List<AiAnalysisResult> getResultsByTransaction(UUID txId) {
+        return aiAnalysisResultRepository.findByTransactionId(txId);
+    }
+
+    private JsonNode callAiService(String endpoint, Object payload) {
         try {
-            HttpHeaders headers = createJsonHeaders();
-            HttpEntity<String> entity = new HttpEntity<>(payload.toString(), headers);
-            ResponseEntity<String> response = restTemplate.postForEntity(aiServiceUrl + endpoint, entity, String.class);
-            return objectMapper.readTree(response.getBody());
-        } catch (Exception e) { return null; }
+            ResponseEntity<String> res = restTemplate.postForEntity(aiServiceUrl + endpoint, 
+                new HttpEntity<>(payload, new HttpHeaders()), String.class);
+            return objectMapper.readTree(res.getBody());
+        } catch (Exception e) { 
+            logger.error("AI Service call to {} failed: {}", endpoint, e.getMessage());
+            return objectMapper.createObjectNode(); 
+        }
     }
 
-    private HttpHeaders createJsonHeaders() {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        return headers;
-    }
-
-    private AiAnalysisResult saveResult(UUID transactionId, UUID orgId, String type, JsonNode result) {
+    private AiAnalysisResult saveResult(UUID txId, UUID orgId, String type, JsonNode result) {
         AiAnalysisResult res = new AiAnalysisResult();
-        res.setTransactionId(transactionId);
+        res.setTransactionId(txId);
         res.setOrganizationId(orgId);
         res.setAnalysisType(type);
         res.setResultJson(result.toString());
+        res.setConfidenceScore(result.path("confidence").asDouble(0.0));
         res.setStatus("COMPLETED");
-        res.setConfidenceScore(result.path("confidence").asDouble(0.8));
-        res.setNeedsHumanReview(result.path("needs_human_review").asBoolean(false));
-        return resultRepository.save(res);
+        return aiAnalysisResultRepository.save(res);
     }
 }

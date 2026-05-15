@@ -7,8 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
@@ -19,8 +18,10 @@ public class EvidenceService {
     private final DocumentService documentService;
     private final BankValidationService bankValidationService;
     private final TransactionRepository transactionRepository;
+    private final TransactionService transactionService;
     private final ChecklistTemplateRepository checklistTemplateRepository;
     private final ChecklistItemTemplateRepository checklistItemTemplateRepository;
+    private final AiAnalysisService aiAnalysisService;
 
     public EvidenceService(
             ChecklistRepository checklistRepository,
@@ -29,7 +30,9 @@ public class EvidenceService {
             BankValidationService bankValidationService,
             TransactionRepository transactionRepository,
             ChecklistTemplateRepository checklistTemplateRepository,
-            ChecklistItemTemplateRepository checklistItemTemplateRepository) {
+            ChecklistItemTemplateRepository checklistItemTemplateRepository,
+            TransactionService transactionService,
+            AiAnalysisService aiAnalysisService) {
         this.checklistRepository = checklistRepository;
         this.checklistItemRepository = checklistItemRepository;
         this.documentService = documentService;
@@ -37,76 +40,119 @@ public class EvidenceService {
         this.transactionRepository = transactionRepository;
         this.checklistTemplateRepository = checklistTemplateRepository;
         this.checklistItemTemplateRepository = checklistItemTemplateRepository;
+        this.transactionService = transactionService;
+        this.aiAnalysisService = aiAnalysisService;
     }
 
     @Transactional
     public Checklist getOrCreateChecklist(UUID transactionId) {
-        java.util.Optional<Checklist> existing = checklistRepository.findByTransactionId(transactionId);
-        
-        if (existing.isPresent()) {
-            Checklist cl = existing.get();
-            List<ChecklistItem> existingItems = checklistItemRepository.findByChecklistId(cl.getId());
-            if (existingItems.isEmpty()) {
-                Transaction tx = transactionRepository.findById(transactionId).orElse(null);
-                if (tx != null) {
-                    populateChecklistFromTemplate(cl, tx);
-                }
+        Transaction tx = transactionRepository.findById(transactionId)
+                .orElseThrow(() -> new RuntimeException("Transaction not found: " + transactionId));
+
+        if (tx.getVendorId() == null) {
+            transactionService.autoLinkVendor(tx, tx.getOrganizationId());
+            if (tx.getVendorId() != null) {
+                transactionRepository.save(tx);
             }
-            return cl;
         }
 
-        // Create new checklist
-        Transaction tx = transactionRepository.findById(transactionId)
-                .orElseThrow(() -> new RuntimeException("Transaction not found"));
+        Checklist checklist = checklistRepository.findByTransactionId(transactionId)
+                .orElseGet(() -> {
+                    Checklist newCl = new Checklist();
+                    newCl.setTransactionId(transactionId);
+                    newCl.setCompleted(false);
+                    newCl.setOrganizationId(tx.getOrganizationId());
+                    return checklistRepository.save(newCl);
+                });
 
-        Checklist checklist = new Checklist();
-        checklist.setTransactionId(transactionId);
-        checklist.setCompleted(false);
-        checklist.setOrganizationId(tx.getOrganizationId());
-        Checklist savedChecklist = checklistRepository.save(checklist);
+        syncChecklistWithTemplate(checklist, tx);
 
-        populateChecklistFromTemplate(savedChecklist, tx);
-        return savedChecklist;
+        return checklist;
     }
 
-    private void populateChecklistFromTemplate(Checklist checklist, Transaction tx) {
-        java.util.Optional<com.audit.api.entity.ChecklistTemplate> templateOpt = java.util.Optional.empty();
+    private Optional<ChecklistTemplate> findTemplateForTransaction(Transaction tx) {
+        UUID orgId = tx.getOrganizationId();
+        if (orgId == null) return Optional.empty();
 
-        // Priority 1: Match by categoryId (user-created OrgCategory-linked template)
+        List<ChecklistTemplate> templates = checklistTemplateRepository.findByOrganizationId(orgId);
+        if (templates.isEmpty()) return Optional.empty();
+
         if (tx.getCategoryId() != null) {
-            templateOpt = checklistTemplateRepository.findByCategoryId(tx.getCategoryId());
-        }
-
-        // Priority 2: Match by category name (for transactions where categoryId is null)
-        if (!templateOpt.isPresent() && tx.getCategoryName() != null && !tx.getCategoryName().isEmpty()) {
-            String catName = tx.getCategoryName().trim().toLowerCase();
-            templateOpt = checklistTemplateRepository.findAll().stream()
-                    .filter(t -> t.getName() != null &&
-                            (t.getName().trim().toLowerCase().equals(catName) ||
-                             t.getName().trim().toLowerCase().contains(catName) ||
-                             catName.contains(t.getName().trim().toLowerCase())))
+            Optional<ChecklistTemplate> match = templates.stream()
+                    .filter(t -> tx.getCategoryId().equals(t.getCategoryId()))
                     .findFirst();
+            if (match.isPresent()) return match;
         }
 
-        // Only populate if a matching user-defined template was found
-        // Do NOT fall back to unrelated templates
-        if (!templateOpt.isPresent()) {
-            return;
+        if (tx.getCategoryName() != null && !tx.getCategoryName().isBlank()) {
+            String target = tx.getCategoryName().trim().toLowerCase();
+            Optional<ChecklistTemplate> match = templates.stream()
+                    .filter(t -> {
+                        if (t.getDescription() == null || t.getDescription().isBlank()) return false;
+                        return Arrays.stream(t.getDescription().split(","))
+                                .anyMatch(c -> c.trim().equalsIgnoreCase(target));
+                    })
+                    .findFirst();
+            if (match.isPresent()) return match;
+
+            match = templates.stream()
+                    .filter(t -> t.getName() != null &&
+                                 t.getName().toLowerCase().contains(target))
+                    .findFirst();
+            if (match.isPresent()) return match;
         }
 
-        com.audit.api.entity.ChecklistTemplate template = templateOpt.get();
-        List<ChecklistItemTemplate> itemTemplates =
+        return Optional.of(templates.get(0));
+    }
+
+    @Transactional
+    public void syncChecklistWithTemplate(Checklist checklist, Transaction tx) {
+        Optional<ChecklistTemplate> templateOpt = findTemplateForTransaction(tx);
+        if (!templateOpt.isPresent()) return;
+
+        ChecklistTemplate template = templateOpt.get();
+        List<ChecklistItemTemplate> templateItems =
                 checklistItemTemplateRepository.findByTemplateId(template.getId());
+        List<ChecklistItem> existingItems =
+                checklistItemRepository.findByChecklistId(checklist.getId());
 
-        for (ChecklistItemTemplate itemTemplate : itemTemplates) {
+        Map<String, ChecklistItemTemplate> templateItemMap = templateItems.stream()
+                .collect(Collectors.toMap(
+                        i -> i.getDescription().trim().toLowerCase(),
+                        i -> i,
+                        (a, b) -> a
+                ));
+
+        Set<String> templateDescriptions = templateItemMap.keySet();
+
+        for (ChecklistItem existing : existingItems) {
+            String key = existing.getDescription().trim().toLowerCase();
+
+            if (templateDescriptions.contains(key)) {
+                ChecklistItemTemplate tItem = templateItemMap.get(key);
+                if (existing.isMandatory() != tItem.isMandatory()) {
+                    existing.setMandatory(tItem.isMandatory());
+                    checklistItemRepository.save(existing);
+                }
+                templateItemMap.remove(key);
+            } else {
+                if (existing.getDocumentId() == null) {
+                    checklistItemRepository.delete(existing);
+                }
+            }
+        }
+
+        for (ChecklistItemTemplate newItem : templateItemMap.values()) {
             ChecklistItem item = new ChecklistItem();
             item.setChecklistId(checklist.getId());
-            item.setDescription(itemTemplate.getDescription());
-            item.setMandatory(itemTemplate.isMandatory());
+            item.setDescription(newItem.getDescription());
+            item.setMandatory(newItem.isMandatory());
             item.setProvided(false);
             item.setOrganizationId(checklist.getOrganizationId());
             checklistItemRepository.save(item);
         }
+
+        updateChecklistCompletion(checklist.getId());
     }
 
     public List<ChecklistItemResponse> getChecklistItemsWithDocNames(UUID checklistId) {
@@ -118,39 +164,47 @@ public class EvidenceService {
                 if (doc != null) docName = doc.getFileName();
             }
             return new ChecklistItemResponse(
-                item.getId(),
-                item.getChecklistId(),
-                item.getDescription(),
-                item.isMandatory(),
-                item.isProvided(),
-                item.getDocumentId(),
-                docName
+                    item.getId(),
+                    item.getChecklistId(),
+                    item.getDescription(),
+                    item.isMandatory(),
+                    item.isProvided(),
+                    item.getDocumentId(),
+                    docName
             );
         }).collect(Collectors.toList());
     }
 
     @Transactional
     public ChecklistItem uploadEvidence(UUID checklistItemId, MultipartFile file) throws Exception {
-        ChecklistItem item = checklistItemRepository.findById(checklistItemId)
-                .orElseThrow(() -> new RuntimeException("Checklist item not found"));
+        final ChecklistItem item = checklistItemRepository.findById(checklistItemId)
+                .orElseThrow(() -> new RuntimeException("Checklist item not found: " + checklistItemId));
 
-        Document doc = documentService.uploadDocument(file);
+        Checklist cl = checklistRepository.findById(item.getChecklistId())
+                .orElseThrow(() -> new RuntimeException("Checklist not found: " + item.getChecklistId()));
+
+        Document doc = documentService.uploadDocument(file, cl.getTransactionId());
         item.setDocumentId(doc.getId());
         item.setProvided(true);
-        item = checklistItemRepository.save(item);
+        ChecklistItem savedItem = checklistItemRepository.save(item);
 
-        updateChecklistCompletion(item.getChecklistId());
+        updateChecklistCompletion(savedItem.getChecklistId());
 
-        // Also update transaction status
-        checklistRepository.findById(item.getChecklistId()).ifPresent(cl -> {
-            transactionRepository.findById(cl.getTransactionId()).ifPresent(tx -> {
-                tx.setBankMatched(true);
-                bankValidationService.evaluateBankValidationRequirement(tx);
-                transactionRepository.save(tx);
-            });
+        transactionRepository.findById(cl.getTransactionId()).ifPresent(txn -> {
+            txn.setBankMatched(true);
+            bankValidationService.evaluateBankValidationRequirement(txn);
+            transactionRepository.save(txn);
+
+            // Trigger AI Analysis to extract document numbers
+            try {
+                aiAnalysisService.runThreeWayMatchFromDocuments(txn.getId());
+            } catch (Exception e) {
+                // Log and continue, AI failure shouldn't block the upload process
+                System.err.println("AI Extraction failed: " + e.getMessage());
+            }
         });
 
-        return item;
+        return savedItem;
     }
 
     @Transactional
@@ -164,27 +218,26 @@ public class EvidenceService {
     @Transactional
     public ChecklistItem removeEvidence(UUID checklistItemId) {
         ChecklistItem item = checklistItemRepository.findById(checklistItemId)
-                .orElseThrow(() -> new RuntimeException("Checklist item not found"));
+                .orElseThrow(() -> new RuntimeException("Checklist item not found: " + checklistItemId));
         item.setDocumentId(null);
         item.setProvided(false);
-        item = checklistItemRepository.save(item);
-        updateChecklistCompletion(item.getChecklistId());
+        ChecklistItem savedItem = checklistItemRepository.save(item);
+        updateChecklistCompletion(savedItem.getChecklistId());
 
-        // Re-evaluate bank validation since evidence was removed
-        checklistRepository.findById(item.getChecklistId()).ifPresent(cl ->
-            transactionRepository.findById(cl.getTransactionId()).ifPresent(tx -> {
-                bankValidationService.evaluateBankValidationRequirement(tx);
-                transactionRepository.save(tx);
-            })
+        checklistRepository.findById(savedItem.getChecklistId()).ifPresent(cl ->
+                transactionRepository.findById(cl.getTransactionId()).ifPresent(txn -> {
+                    bankValidationService.evaluateBankValidationRequirement(txn);
+                    transactionRepository.save(txn);
+                })
         );
 
-        return item;
+        return savedItem;
     }
 
     private void updateChecklistCompletion(UUID checklistId) {
-        long mandatoryCount = checklistItemRepository.countByChecklistIdAndMandatory(checklistId, true);
-        long mandatoryProvidedCount = checklistItemRepository.countByChecklistIdAndMandatoryAndProvided(checklistId, true, true);
-        boolean complete = mandatoryCount > 0 && mandatoryCount == mandatoryProvidedCount;
+        long mandatory = checklistItemRepository.countByChecklistIdAndMandatory(checklistId, true);
+        long provided  = checklistItemRepository.countByChecklistIdAndMandatoryAndProvided(checklistId, true, true);
+        boolean complete = mandatory > 0 && mandatory == provided;
 
         checklistRepository.findById(checklistId).ifPresent(cl -> {
             cl.setCompleted(complete);
@@ -192,7 +245,6 @@ public class EvidenceService {
         });
     }
 
-    /** Audit readiness for a single transaction: % of mandatory items provided */
     public ReadinessScore getTransactionReadiness(UUID transactionId) {
         Checklist cl = checklistRepository.findByTransactionId(transactionId).orElse(null);
         if (cl == null) return new ReadinessScore(0, 0, 0, false);

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { transactionApi, projectApi, evidenceApi, taskApi, userApi, riskApi, vendorsApi, aiApi } from '../services/api';
+import { transactionApi, projectApi, evidenceApi, taskApi, userApi, riskApi, vendorsApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { 
   Search, 
@@ -48,12 +48,10 @@ function getCategoryColor(name) {
   return categories[name] || '#94a3b8';
 }
 
-function EvidencePanel({ transaction, users, currentUser, onClose, onStatusChange, onVendorLinked }) {
+function EvidencePanel({ transaction, users, currentUser, onClose, onStatusChange }) {
   const [items, setItems] = useState([]);
-  const [readiness, setReadiness] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [risks, setRisks] = useState([]);
-  const [vendors, setVendors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('items');
 
@@ -65,18 +63,14 @@ function EvidencePanel({ transaction, users, currentUser, onClose, onStatusChang
   const loadData = async () => {
     setLoading(true);
     try {
-      const [itemsRes, readinessRes, tasksRes, risksRes, vendorsRes] = await Promise.all([
+      const [itemsRes, tasksRes, risksRes] = await Promise.all([
         evidenceApi.getItems(transaction.id),
-        evidenceApi.getReadiness(transaction.id),
         taskApi.getByTransaction(transaction.id),
         riskApi.getAll(),
-        vendorsApi.getAll(),
       ]);
       setItems(itemsRes.data);
-      setReadiness(readinessRes.data);
       setTasks(tasksRes.data);
       setRisks(risksRes.data.filter(f => f.projectId === transaction.projectId));
-      setVendors(vendorsRes.data);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   };
@@ -236,7 +230,6 @@ function EvidencePanel({ transaction, users, currentUser, onClose, onStatusChang
             </div>
           )}
           
-          {/* Status Actions */}
           <div style={{ marginTop: '32px', paddingTop: '20px', borderTop: '1px solid #e2e8f0' }}>
              <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>Decision</h3>
              <div style={{ display: 'flex', gap: '12px' }}>
@@ -271,7 +264,7 @@ export default function Transactions() {
   const loadData = async () => {
     try {
       const [txRes, pRes, uRes] = await Promise.all([
-        transactionApi.getAll(),
+        transactionApi.getLedgerTransactions(),
         projectApi.getAll(),
         userApi.getAll(),
       ]);
@@ -281,6 +274,7 @@ export default function Transactions() {
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   };
+
 
   const handleStatusChange = (id, status) => {
     setTransactions(transactions.map(t => t.id === id ? { ...t, status } : t));
@@ -299,8 +293,11 @@ export default function Transactions() {
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
             <tr>
+              <th style={{ textAlign: 'left', padding: '16px', fontSize: '13px', color: '#475569', fontWeight: '600' }}>Txn No.</th>
+              <th style={{ textAlign: 'left', padding: '16px', fontSize: '13px', color: '#475569', fontWeight: '600' }}>Ref No.</th>
               <th style={{ textAlign: 'left', padding: '16px', fontSize: '13px', color: '#475569', fontWeight: '600' }}>Description</th>
-              <th style={{ textAlign: 'left', padding: '16px', fontSize: '13px', color: '#475569', fontWeight: '600' }}>Category</th>
+              <th style={{ textAlign: 'left', padding: '16px', fontSize: '13px', color: '#475569', fontWeight: '600' }}>Vendor</th>
+              <th style={{ textAlign: 'left', padding: '16px', fontSize: '13px', color: '#475569', fontWeight: '600' }}>Ledger</th>
               <th style={{ textAlign: 'left', padding: '16px', fontSize: '13px', color: '#475569', fontWeight: '600' }}>Amount</th>
               <th style={{ textAlign: 'left', padding: '16px', fontSize: '13px', color: '#475569', fontWeight: '600' }}>Status</th>
               <th style={{ textAlign: 'right', padding: '16px', fontSize: '13px', color: '#475569', fontWeight: '600' }}>Actions</th>
@@ -310,11 +307,20 @@ export default function Transactions() {
             {transactions.map(tx => (
               <tr key={tx.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
                 <td style={{ padding: '16px' }}>
-                  <div style={{ fontWeight: '500' }}>{tx.description}</div>
-                  <div style={{ fontSize: '12px', color: '#94a3b8' }}>{new Date(tx.date).toLocaleDateString()}</div>
+                  <code style={{ fontSize: '11px', backgroundColor: '#f3f4f6', padding: '2px 4px', borderRadius: '4px' }}>{tx.transactionNumber}</code>
                 </td>
                 <td style={{ padding: '16px' }}>
-                  <span style={{ fontSize: '13px', color: getCategoryColor(tx.categoryName), fontWeight: '500' }}>{tx.categoryName}</span>
+                  <td style={tdStyle}>{tx.vendorName || tx.vendorCustomer || 'N/A'}</td>
+                </td>
+                <td style={{ padding: '16px' }}>
+                  <div style={{ fontWeight: '500' }}>{tx.description}</div>
+                  <div style={{ fontSize: '12px', color: '#94a3b8' }}>{new Date(tx.transactionDate).toLocaleDateString()}</div>
+                </td>
+                <td style={{ padding: '16px' }}>
+                  <div style={{ fontSize: '13px' }}>{tx.vendorCustomer || 'N/A'}</div>
+                </td>
+                <td style={{ padding: '16px' }}>
+                  <div style={{ fontSize: '13px' }}>{tx.ledgerName || 'N/A'}</div>
                 </td>
                 <td style={{ padding: '16px', fontWeight: '600' }}>₹{tx.amount?.toLocaleString()}</td>
                 <td style={{ padding: '16px' }}>

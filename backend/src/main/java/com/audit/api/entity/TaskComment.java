@@ -16,7 +16,6 @@ public class TaskComment extends BaseEntity {
     private UUID userId;
     private String userName;
     private String comment;
-    private LocalDateTime createdAt;
 
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
@@ -33,22 +32,18 @@ public class TaskComment extends BaseEntity {
     public String getComment() { return comment; }
     public void setComment(String comment) { this.comment = comment; }
 
-    public LocalDateTime getCreatedAt() { return createdAt; }
-    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
     
     public static class TaskCommentBuilder {
         private UUID taskId;
         private UUID userId;
         private String userName;
         private String comment;
-        private LocalDateTime createdAt;
         private UUID organizationId;
         
         public TaskCommentBuilder taskId(UUID taskId) { this.taskId = taskId; return this; }
         public TaskCommentBuilder userId(UUID userId) { this.userId = userId; return this; }
         public TaskCommentBuilder userName(String userName) { this.userName = userName; return this; }
         public TaskCommentBuilder comment(String comment) { this.comment = comment; return this; }
-        public TaskCommentBuilder createdAt(LocalDateTime createdAt) { this.createdAt = createdAt; return this; }
         public TaskCommentBuilder organizationId(UUID organizationId) { this.organizationId = organizationId; return this; }
         
         public TaskComment build() {
@@ -57,7 +52,6 @@ public class TaskComment extends BaseEntity {
             tc.setUserId(userId);
             tc.setUserName(userName);
             tc.setComment(comment);
-            tc.setCreatedAt(createdAt);
             tc.setOrganizationId(organizationId);
             return tc;
         }

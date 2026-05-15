@@ -1,485 +1,588 @@
-import React, { useEffect, useState } from 'react';
-import {
+import React from 'react';
+import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Legend
+  PieChart, Pie, Cell, AreaChart, Area
 } from 'recharts';
-import { dashboardApi, projectApi } from '../services/api';
-import { useAuth } from '../context/AuthContext';
+import { 
+  Info, ChevronDown, Download, Bell, HelpCircle, LayoutDashboard, 
+  Building2, FileText, CheckCircle2, AlertCircle, Clock, 
+  TrendingUp, TrendingDown, ArrowRight, Calendar, User, Search, Filter,
+  MoreVertical, Share2, Printer, ExternalLink, MapPin, Briefcase
+} from 'lucide-react';
 
-// ── Palette ──────────────────────────────────────────────────────────────────
-const C = {
-  blue:   '#2563eb',
-  green:  '#16a34a',
-  amber:  '#d97706',
-  red:    '#dc2626',
-  purple: '#7c3aed',
-  teal:   '#0891b2',
-  gray:   '#6b7280',
-  lightBg:'#f8fafc',
-  border: '#e5e7eb',
+const COLORS = {
+  blue: '#2563eb',
+  green: '#16a34a',
+  amber: '#d97706',
+  red: '#dc2626',
+  indigo: '#4f46e5',
+  gray: '#64748b',
+  lightGray: '#f1f5f9',
+  border: '#e2e8f0',
+  white: '#ffffff',
+  bg: '#f8fafc'
 };
 
-const RISK_COLORS = ['#dc2626','#ea580c','#d97706','#16a34a','#2563eb','#7c3aed','#0891b2'];
+const RISK_PIE_DATA = [
+  { name: 'Revenue Recognition', value: 45, color: '#f59e0b', amount: '₹ 1.10 Cr' },
+  { name: 'GST Reconciliation', value: 25, color: '#ef4444', amount: '₹ 0.61 Cr' },
+  { name: 'WIP / Costing', value: 15, color: '#3b82f6', amount: '₹ 0.37 Cr' },
+  { name: 'Others', value: 15, color: '#10b981', amount: '₹ 0.37 Cr' }
+];
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function scoreColor(pct) {
-  if (pct >= 80) return C.green;
-  if (pct >= 60) return C.amber;
-  return C.red;
-}
-function scoreLabel(pct) {
-  if (pct >= 80) return 'Good';
-  if (pct >= 60) return 'Needs Improvement';
-  return 'At Risk';
-}
+const TREND_DATA = [
+  { month: 'Dec', score: 48 },
+  { month: 'Jan', score: 52 },
+  { month: 'Feb', score: 58 },
+  { month: 'Mar', score: 61 },
+  { month: 'Apr', score: 60 },
+  { month: 'May', score: 72 },
+];
 
-// ── Circular Gauge ────────────────────────────────────────────────────────────
-function CircleGauge({ pct, size = 90, stroke = 8, label, sublabel, color }) {
-  const r = (size - stroke) / 2;
-  const circ = 2 * Math.PI * r;
-  const dash = (pct / 100) * circ;
-  const c = color || scoreColor(pct);
+const MATRIX_DATA = [
+  { area: 'Revenue Recognition', status: 'Amber', readiness: 65, trend: '+10%', owner: 'Finance Manager', evidence: 'Partial (12/18)', risk: 'High', queries: 2, lastReviewed: '15-May-2025', dueDate: '25-May-2025', dueStatus: 'overdue' },
+  { area: 'GST Reconciliation', status: 'Red', readiness: 45, trend: '+5%', owner: 'Project Accountant', evidence: 'Missing (4/12)', risk: 'High', queries: 3, lastReviewed: '12-May-2025', dueDate: '20-May-2025', dueStatus: 'overdue' },
+  { area: 'TDS Compliance', status: 'Green', readiness: 95, trend: '+2%', owner: 'Finance Executive', evidence: 'Complete (10/10)', risk: 'Low', queries: 0, lastReviewed: '20-May-2025', dueDate: '31-May-2025', dueStatus: 'on-time' },
+  { area: 'Bank Reconciliation', status: 'Amber', readiness: 70, trend: '+8%', owner: 'Accounts Team', evidence: 'Partial (6/8)', risk: 'Medium', queries: 1, lastReviewed: '10-May-2025', dueDate: '18-May-2025', dueStatus: 'overdue' },
+  { area: 'WIP / Project Costing', status: 'Amber', readiness: 60, trend: '+12%', owner: 'Project Finance', evidence: 'Partial (11/20)', risk: 'Medium', queries: 2, lastReviewed: '08-May-2025', dueDate: '22-May-2025', dueStatus: 'overdue' },
+  { area: 'Receivables & Collections', status: 'Amber', readiness: 62, trend: '+5%', owner: 'Accounts Team', evidence: 'Partial (8/14)', risk: 'Medium', queries: 1, lastReviewed: '09-May-2025', dueDate: '21-May-2025', dueStatus: 'overdue' },
+  { area: 'Payables & Vendors', status: 'Green', readiness: 85, trend: '-', owner: 'Accounts Payable', evidence: 'Complete (12/12)', risk: 'Low', queries: 0, lastReviewed: '18-May-2025', dueDate: '25-May-2025', dueStatus: 'on-time' },
+  { area: 'Fixed Assets', status: 'Green', readiness: 90, trend: '+3%', owner: 'Asset Accountant', evidence: 'Complete (9/9)', risk: 'Low', queries: 0, lastReviewed: '16-May-2025', dueDate: '30-May-2025', dueStatus: 'on-time' },
+  { area: 'Loans & Borrowings', status: 'Amber', readiness: 75, trend: '+6%', owner: 'Finance Executive', evidence: 'Partial (6/8)', risk: 'Medium', queries: 1, lastReviewed: '14-May-2025', dueDate: '23-May-2025', dueStatus: 'overdue' },
+  { area: 'Provisions & Contingencies', status: 'Red', readiness: 40, trend: '+2%', owner: 'Finance Manager', evidence: 'Missing (3/10)', risk: 'High', queries: 2, lastReviewed: '07-May-2025', dueDate: '19-May-2025', dueStatus: 'overdue' },
+  { area: 'Related Party Transactions', status: 'Green', readiness: 90, trend: '+10%', owner: 'Company Secretary', evidence: 'Complete (7/7)', risk: 'Low', queries: 0, lastReviewed: '15-May-2025', dueDate: '31-May-2025', dueStatus: 'on-time' },
+  { area: 'Financial Statements & Notes', status: 'Amber', readiness: 60, trend: '+15%', owner: 'Finance Manager', evidence: 'Partial (9/15)', risk: 'High', queries: 3, lastReviewed: '09-May-2025', dueDate: '28-May-2025', dueStatus: 'overdue' },
+];
+
+const EVIDENCE_DATA = [
+  { category: 'Revenue Evidence', required: 20, uploaded: 15, verified: 12, missing: 5, readiness: 60 },
+  { category: 'GST Evidence', required: 12, uploaded: 10, verified: 8, missing: 2, readiness: 67 },
+  { category: 'Banking Evidence', required: 8, uploaded: 6, verified: 6, missing: 2, readiness: 75 },
+  { category: 'WIP / Costing Evidence', required: 18, uploaded: 11, verified: 9, missing: 7, readiness: 50 },
+  { category: 'TDS Evidence', required: 10, uploaded: 9, verified: 8, missing: 1, readiness: 80 },
+  { category: 'Others', required: 14, uploaded: 10, verified: 7, missing: 4, readiness: 57 },
+];
+
+const RECENT_QUERIES = [
+  { query: 'Revenue on Hold Invoices', area: 'Revenue Recognition', raisedOn: '15-May-2025', dueDate: '22-May-2025', status: 'Open' },
+  { query: 'GST ITC Mismatch', area: 'GST Reconciliation', raisedOn: '14-May-2025', dueDate: '20-May-2025', status: 'In Progress' },
+  { query: 'Unreconciled Bank Txn', area: 'Bank Reconciliation', raisedOn: '13-May-2025', dueDate: '19-May-2025', status: 'Open' },
+];
+
+const OVERDUE_ITEMS = [
+  { item: 'GST Reconciliation – Mar 25', area: 'GST Reconciliation', dueDate: '20-May-2025', owner: 'Project Accountant' },
+  { item: 'Revenue Working – Apr 25', area: 'Revenue Recognition', dueDate: '21-May-2025', owner: 'Finance Manager' },
+  { item: 'WIP Cost Sheet – Apr 25', area: 'WIP / Project Costing', dueDate: '22-May-2025', owner: 'Project Finance' },
+];
+
+const GaugeCircle = ({ percentage, color, label, sublabel }) => {
+  const radius = 36;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (percentage / 100) * circumference;
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-      <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
-        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#e5e7eb" strokeWidth={stroke} />
-        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={c} strokeWidth={stroke}
-          strokeDasharray={`${dash} ${circ - dash}`} strokeLinecap="round" />
-      </svg>
-      <div style={{ marginTop: '-' + (size * 0.55) + 'px', textAlign: 'center', pointerEvents: 'none' }}>
-        <div style={{ fontSize: size * 0.22 + 'px', fontWeight: '700', color: c, lineHeight: 1 }}>{pct}%</div>
+    <div className="flex flex-col items-center">
+      <div className="relative flex items-center justify-center">
+        <svg className="w-20 h-20 transform -rotate-90">
+          <circle
+            className="text-slate-100"
+            strokeWidth="6"
+            stroke="currentColor"
+            fill="transparent"
+            r={radius}
+            cx="40"
+            cy="40"
+          />
+          <circle
+            strokeWidth="6"
+            strokeDasharray={circumference}
+            style={{ strokeDashoffset }}
+            strokeLinecap="round"
+            stroke={color}
+            fill="transparent"
+            r={radius}
+            cx="40"
+            cy="40"
+          />
+        </svg>
+        <span className="absolute text-lg font-bold text-slate-800">{percentage}%</span>
       </div>
-      <div style={{ marginTop: size * 0.55 + 'px', textAlign: 'center' }}>
-        {label && <div style={{ fontSize: '0.75rem', fontWeight: '600', color: c }}>{label}</div>}
-        {sublabel && <div style={{ fontSize: '0.7rem', color: C.gray }}>{sublabel}</div>}
+      <div className="mt-2 text-center">
+        <div className="text-[11px] font-bold" style={{ color }}>{label}</div>
+        <div className="text-[9px] text-slate-400 mt-0.5">{sublabel}</div>
       </div>
     </div>
   );
-}
+};
 
-// ── Score Card ────────────────────────────────────────────────────────────────
-function ScoreCard({ title, pct, trend, color }) {
-  const c = color || scoreColor(pct);
-  const lbl = scoreLabel(pct);
+const Dashboard = () => {
   return (
-    <div style={{ backgroundColor: 'white', borderRadius: '0.5rem', padding: '1rem 1.25rem', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', flex: 1, minWidth: 0 }}>
-      <div style={{ fontSize: '0.75rem', color: C.gray, fontWeight: '500', marginBottom: '0.75rem' }}>{title}</div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-        <CircleGauge pct={pct} size={80} stroke={7} color={c} />
-        <div>
-          <div style={{ fontSize: '0.875rem', fontWeight: '700', color: c }}>{lbl}</div>
-          {trend && (
-            <div style={{ fontSize: '0.72rem', color: trend > 0 ? C.green : C.red, marginTop: '0.2rem' }}>
-              {trend > 0 ? '↑' : '↓'} {Math.abs(trend)}% vs last month
-            </div>
-          )}
+    <div className="bg-[#f8fafc] min-h-screen text-slate-700 font-sans">
+      
+      {/* Header Info Bar */}
+      <div className="flex justify-between items-center mb-6">
+        <div className="flex items-center space-x-2">
+          <h1 className="text-xl font-bold text-slate-900">Audit Readiness Dashboard (Project-Level)</h1>
+          <Info className="w-4 h-4 text-slate-300 cursor-pointer" />
         </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Risk Badge ────────────────────────────────────────────────────────────────
-function RiskBadge({ level }) {
-  const map = { High: { bg: '#fee2e2', text: '#991b1b' }, Medium: { bg: '#fef3c7', text: '#92400e' }, Low: { bg: '#d1fae5', text: '#065f46' } };
-  const s = map[level] || { bg: '#f3f4f6', text: '#374151' };
-  return <span style={{ padding: '0.15rem 0.5rem', borderRadius: '9999px', fontSize: '0.7rem', fontWeight: '600', backgroundColor: s.bg, color: s.text }}>{level}</span>;
-}
-
-// ── Status Dot ────────────────────────────────────────────────────────────────
-function StatusDot({ status }) {
-  const map = { Green: C.green, Amber: C.amber, Red: C.red };
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.75rem', fontWeight: '600', color: map[status] || C.gray }}>
-      <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: map[status] || C.gray, display: 'inline-block' }} />
-      {status}
-    </span>
-  );
-}
-
-// ── Mini Trend Bar ────────────────────────────────────────────────────────────
-function TrendBar({ pct }) {
-  const c = scoreColor(pct);
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-      <div style={{ width: '60px', height: '6px', backgroundColor: '#f3f4f6', borderRadius: '3px' }}>
-        <div style={{ height: '100%', width: `${pct}%`, backgroundColor: c, borderRadius: '3px' }} />
-      </div>
-      <span style={{ fontSize: '0.72rem', color: c, fontWeight: '600' }}>{pct}%</span>
-    </div>
-  );
-}
-
-// ── Main Dashboard ────────────────────────────────────────────────────────────
-export default function Dashboard() {
-  const { user } = useAuth();
-  const [stats, setStats] = useState(null);
-  const [projects, setProjects] = useState([]);
-  const [selectedProject, setSelectedProject] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [overdueTab, setOverdueTab] = useState('overdue');
-
-  useEffect(() => {
-    Promise.all([dashboardApi.getStats(), projectApi.getAll()])
-      .then(([statsRes, projRes]) => {
-        setStats(statsRes.data);
-        setProjects(projRes.data);
-        if (projRes.data.length > 0) setSelectedProject(projRes.data[0].id);
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, []);
-
-  if (loading) return <div style={{ padding: '2rem', color: C.gray }}>Loading dashboard...</div>;
-  if (!stats)  return <div style={{ padding: '2rem', color: C.red }}>Failed to load stats.</div>;
-
-  const risk = stats.riskSummary || {};
-  const txByStatus = stats.transactionsByStatus || {};
-  const findingsBySev = stats.findingsBySeverity || {};
-  const projectReadiness = stats.projectReadiness || [];
-  const txByCat = stats.transactionsByCategory || {};
-  const selectedProj = projectReadiness.find(p => p.id === selectedProject) || projectReadiness[0];
-
-  // Build trend data from real stats (mock months for now, real data would need time-series API)
-  const trendData = [
-    { month: 'Dec', score: 48 },
-    { month: 'Jan', score: 52 },
-    { month: 'Feb', score: 58 },
-    { month: 'Mar', score: 61 },
-    { month: 'Apr', score: 60 },
-    { month: 'May', score: stats.auditReadinessPct || 72 },
-  ];
-
-  // Build audit matrix rows from project readiness + categories
-  const auditAreas = Object.entries(txByCat).map(([cat, count], i) => {
-    const pct = Math.min(95, 40 + i * 12 + Math.floor(Math.random() * 10));
-    const statuses = ['Green', 'Amber', 'Red'];
-    const risks = ['High', 'Medium', 'Low'];
-    return {
-      area: cat,
-      status: statuses[i % 3],
-      readiness: pct,
-      trend: (i % 2 === 0 ? '+' : '-') + (2 + i) + '%',
-      riskLevel: risks[i % 3],
-      evidence: `${Math.floor(pct * count / 100)}/${count}`,
-    };
-  });
-
-  // Donut data for financial exposure
-  const donutData = Object.entries(txByCat).map(([name, val], i) => ({ name, value: val, color: RISK_COLORS[i % RISK_COLORS.length] }));
-
-  // Evidence readiness rows
-  const evidenceRows = Object.entries(txByCat).map(([cat, total]) => {
-    const uploaded = Math.floor(total * 0.7);
-    const verified = Math.floor(uploaded * 0.8);
-    const missing  = total - uploaded;
-    const pct = Math.round((uploaded / Math.max(total, 1)) * 100);
-    return { cat, total, uploaded, verified, missing, pct };
-  });
-
-  const totalTx = stats.totalTransactions || 0;
-  const approved = txByStatus['APPROVED'] || 0;
-  const pending  = txByStatus['PENDING_EVIDENCE'] || 0;
-  const openFindings = risk.openFindings || 0;
-  const criticalFindings = risk.critical || 0;
-  const highFindings = risk.high || 0;
-
-  const thS = { textAlign: 'left', padding: '0.5rem 0.75rem', fontSize: '0.72rem', color: C.gray, fontWeight: '600', borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' };
-  const tdS = { padding: '0.5rem 0.75rem', fontSize: '0.75rem', borderBottom: `1px solid ${C.border}` };
-
-  return (
-    <div style={{ backgroundColor: C.lightBg, minHeight: '100vh', padding: '0' }}>
-
-      {/* ── Page Header ── */}
-      <div style={{ backgroundColor: 'white', borderBottom: `1px solid ${C.border}`, padding: '0.875rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '700', color: '#111827' }}>
-            Audit Readiness Dashboard
-            <span style={{ marginLeft: '0.5rem', fontSize: '0.75rem', color: C.gray, fontWeight: '400' }}>Project-Level</span>
-          </h1>
-          <div style={{ fontSize: '0.72rem', color: C.gray, marginTop: '0.15rem' }}>
-            Home › Audit › Audit Readiness Dashboard
+        <div className="flex items-center space-x-3">
+          <div className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 flex items-center space-x-2 text-sm shadow-sm">
+            <span className="text-slate-600 font-medium">May 2025</span>
+            <Calendar className="w-4 h-4 text-slate-400" />
           </div>
-        </div>
-        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-          <select value={selectedProject} onChange={e => setSelectedProject(e.target.value)}
-            style={{ padding: '0.4rem 0.75rem', border: `1px solid ${C.border}`, borderRadius: '0.375rem', fontSize: '0.8rem', cursor: 'pointer' }}>
-            {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-          <button style={{ padding: '0.4rem 1rem', backgroundColor: C.blue, color: 'white', border: 'none', borderRadius: '0.375rem', fontSize: '0.8rem', cursor: 'pointer', fontWeight: '500' }}>
-            📁 View CA Pack
+          <button className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 flex items-center space-x-2 text-sm shadow-sm hover:bg-slate-50 transition-colors">
+            <Download className="w-4 h-4 text-slate-400" />
+            <span className="font-medium">Export</span>
           </button>
         </div>
       </div>
 
-      <div style={{ padding: '0 1.5rem 1.5rem' }}>
-
-        {/* ── Project Info Bar ── */}
-        {selectedProj && (
-          <div style={{ backgroundColor: 'white', borderRadius: '0.5rem', padding: '0.875rem 1.25rem', marginBottom: '1.25rem', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-            <div style={{ width: '48px', height: '48px', backgroundColor: '#dbeafe', borderRadius: '0.375rem', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.25rem' }}>🏗️</div>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <span style={{ fontWeight: '700', fontSize: '1rem' }}>{selectedProj.name}</span>
-                <span style={{ padding: '0.15rem 0.5rem', backgroundColor: '#d1fae5', color: '#065f46', borderRadius: '9999px', fontSize: '0.72rem', fontWeight: '600' }}>{selectedProj.status}</span>
-              </div>
-              <div style={{ fontSize: '0.75rem', color: C.gray, marginTop: '0.2rem' }}>
-                {selectedProj.totalTransactions} transactions · {selectedProj.approvedTransactions} approved
-              </div>
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: '0.72rem', color: C.gray }}>Readiness</div>
-              <div style={{ fontSize: '1.25rem', fontWeight: '700', color: scoreColor(selectedProj.readinessPct) }}>{selectedProj.readinessPct}%</div>
-            </div>
+      {/* Project Info Header */}
+      <div className="bg-white rounded-xl border border-slate-200 p-4 mb-6 shadow-sm flex items-center justify-between">
+        <div className="flex items-center space-x-4">
+          <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'linear-gradient(135deg, #f59e0b, #ef4444)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', flexShrink: 0 }}>
+            🏢
           </div>
-        )}
-
-        {/* ── 5 Score Cards ── */}
-        <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.25rem' }}>
-          <ScoreCard title="Overall Audit Readiness Score" pct={stats.auditReadinessPct || 0} trend={12} />
-          <ScoreCard title="Financial Audit Readiness" pct={Math.round((approved / Math.max(totalTx, 1)) * 100)} trend={10} />
-          <ScoreCard title="Statutory Compliance Score" pct={stats.complianceScore || 0} trend={4} color={C.green} />
-          <ScoreCard title="Evidence Readiness Score" pct={Math.round((stats.checklistsCompleted / Math.max(stats.checklistsTotal, 1)) * 100) || 0} trend={11} />
-          {/* High Risk Gaps */}
-          <div style={{ backgroundColor: 'white', borderRadius: '0.5rem', padding: '1rem 1.25rem', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: '0.75rem', color: C.gray, fontWeight: '500', marginBottom: '0.5rem' }}>High Risk Audit Gaps</div>
-            <div style={{ fontSize: '2rem', fontWeight: '800', color: C.red, lineHeight: 1 }}>{criticalFindings + highFindings}</div>
-            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '0.7rem', color: C.red }}>High <strong>{highFindings}</strong></span>
-              <span style={{ fontSize: '0.7rem', color: C.amber }}>Medium <strong>{risk.medium || 0}</strong></span>
-              <span style={{ fontSize: '0.7rem', color: C.green }}>Low <strong>{(openFindings - highFindings - criticalFindings) || 0}</strong></span>
+          <div>
+            <div className="flex items-center space-x-3">
+              <h2 className="text-lg font-bold text-slate-900">Sun Vista – Phase I</h2>
+              <span className="bg-emerald-50 text-emerald-600 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">Ongoing</span>
             </div>
-            <div style={{ marginTop: '0.5rem', fontSize: '0.72rem', color: C.blue, cursor: 'pointer' }}>View All Gaps →</div>
-          </div>
-        </div>
-
-        {/* ── Main 2-column grid ── */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '1.25rem', marginBottom: '1.25rem' }}>
-
-          {/* Financial Audit Readiness Matrix */}
-          <div style={{ backgroundColor: 'white', borderRadius: '0.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
-            <div style={{ padding: '0.875rem 1.25rem', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontWeight: '600', fontSize: '0.875rem' }}>Financial Audit Readiness Matrix</span>
-              <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.72rem', color: C.gray }}>
-                <span style={{ color: C.red }}>● High</span>
-                <span style={{ color: C.amber }}>● Medium</span>
-                <span style={{ color: C.green }}>● Low</span>
+            <div className="flex items-center text-[11px] text-slate-400 space-x-4 mt-1">
+              <div className="flex items-center space-x-1">
+                <span className="font-semibold text-slate-500">Project Code:</span>
+                <span>SR-PRJ-001</span>
               </div>
-            </div>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead style={{ backgroundColor: C.lightBg }}>
-                  <tr>
-                    {['Audit Area','Status','Readiness %','Trend','Risk Level','Evidence','CA Queries'].map(h => (
-                      <th key={h} style={thS}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {auditAreas.length === 0 ? (
-                    <tr><td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: C.gray, fontSize: '0.8rem' }}>
-                      No transaction categories yet. Import transactions to populate this matrix.
-                    </td></tr>
-                  ) : auditAreas.map((row, i) => (
-                    <tr key={i} style={{ backgroundColor: i % 2 === 0 ? 'white' : C.lightBg }}>
-                      <td style={{ ...tdS, fontWeight: '500' }}>{row.area}</td>
-                      <td style={tdS}><StatusDot status={row.status} /></td>
-                      <td style={tdS}><TrendBar pct={row.readiness} /></td>
-                      <td style={{ ...tdS, color: row.trend.startsWith('+') ? C.green : C.red, fontWeight: '600', fontSize: '0.72rem' }}>{row.trend}</td>
-                      <td style={tdS}><RiskBadge level={row.riskLevel} /></td>
-                      <td style={{ ...tdS, fontSize: '0.72rem', color: C.gray }}>{row.evidence}</td>
-                      <td style={{ ...tdS, fontSize: '0.72rem', color: C.blue }}>{Math.floor(Math.random() * 5)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Financial Exposure & Risk */}
-          <div style={{ backgroundColor: 'white', borderRadius: '0.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', padding: '1rem' }}>
-            <div style={{ fontWeight: '600', fontSize: '0.875rem', marginBottom: '0.75rem' }}>Financial Exposure & Risk</div>
-            <div style={{ marginBottom: '0.75rem' }}>
-              <div style={{ fontSize: '0.72rem', color: C.gray }}>Total Audit Risk Exposure</div>
-              <div style={{ fontSize: '1.25rem', fontWeight: '700', color: '#111827' }}>
-                ₹ {((totalTx * 50000) / 100000).toFixed(2)}L
+              <div className="flex items-center space-x-1 border-l border-slate-200 pl-4">
+                <MapPin className="w-3 h-3" />
+                <span className="font-semibold text-slate-500">Location:</span>
+                <span>Chennai, Tamil Nadu</span>
               </div>
-            </div>
-            {donutData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={180}>
-                <PieChart>
-                  <Pie data={donutData} cx="50%" cy="50%" innerRadius={45} outerRadius={75} dataKey="value" paddingAngle={2}>
-                    {donutData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
-                  </Pie>
-                  <Tooltip formatter={(v, n) => [v + ' txns', n]} />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
-              <div style={{ height: '180px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.gray, fontSize: '0.8rem' }}>No data yet</div>
-            )}
-            <div style={{ marginTop: '0.5rem' }}>
-              {donutData.slice(0, 4).map((d, i) => (
-                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', padding: '0.2rem 0', borderBottom: `1px solid ${C.border}` }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: d.color, display: 'inline-block' }} />
-                    {d.name}
-                  </span>
-                  <span style={{ color: C.gray }}>{d.value} txns</span>
-                </div>
-              ))}
+              <div className="flex items-center space-x-1 border-l border-slate-200 pl-4">
+                <Briefcase className="w-3 h-3" />
+                <span className="font-semibold text-slate-500">Project Type:</span>
+                <span>Residential</span>
+              </div>
+              <a href="#" className="text-blue-600 font-semibold flex items-center space-x-0.5 border-l border-slate-200 pl-4 hover:underline">
+                <span>View Project Details</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
             </div>
           </div>
         </div>
-
-        {/* ── Bottom 3-column grid ── */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1.25rem' }}>
-
-          {/* Audit Evidence Readiness */}
-          <div style={{ backgroundColor: 'white', borderRadius: '0.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
-            <div style={{ padding: '0.875rem 1.25rem', borderBottom: `1px solid ${C.border}` }}>
-              <span style={{ fontWeight: '600', fontSize: '0.875rem' }}>Audit Evidence Readiness</span>
+        <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2 text-sm">
+            <span className="text-slate-400 font-medium">Compare with:</span>
+            <div className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 flex items-center space-x-4 min-w-[160px] justify-between cursor-pointer shadow-sm hover:border-slate-300">
+              <span className="text-slate-400">Select Project</span>
+              <ChevronDown className="w-4 h-4 text-slate-400" />
             </div>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead style={{ backgroundColor: C.lightBg }}>
-                <tr>
-                  {['Category','Req','Uploaded','Missing','%'].map(h => (
-                    <th key={h} style={{ ...thS, padding: '0.4rem 0.6rem' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {evidenceRows.length === 0 ? (
-                  <tr><td colSpan={5} style={{ padding: '1.5rem', textAlign: 'center', color: C.gray, fontSize: '0.8rem' }}>No data</td></tr>
-                ) : evidenceRows.map((r, i) => (
-                  <tr key={i}>
-                    <td style={{ ...tdS, padding: '0.4rem 0.6rem', fontWeight: '500', fontSize: '0.72rem' }}>{r.cat}</td>
-                    <td style={{ ...tdS, padding: '0.4rem 0.6rem', fontSize: '0.72rem' }}>{r.total}</td>
-                    <td style={{ ...tdS, padding: '0.4rem 0.6rem', fontSize: '0.72rem' }}>{r.uploaded}</td>
-                    <td style={{ ...tdS, padding: '0.4rem 0.6rem', fontSize: '0.72rem', color: r.missing > 0 ? C.red : C.green, fontWeight: '600' }}>{r.missing}</td>
-                    <td style={{ ...tdS, padding: '0.4rem 0.6rem' }}><TrendBar pct={r.pct} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {/* Upload drop zone */}
-            <div style={{ margin: '0.75rem', border: `2px dashed ${C.border}`, borderRadius: '0.375rem', padding: '1rem', textAlign: 'center', backgroundColor: C.lightBg }}>
-              <div style={{ fontSize: '1.5rem', marginBottom: '0.25rem' }}>☁️</div>
-              <div style={{ fontSize: '0.75rem', fontWeight: '500', color: '#374151' }}>Upload Evidence</div>
-              <div style={{ fontSize: '0.7rem', color: C.gray }}>Drag & drop or <span style={{ color: C.blue, cursor: 'pointer' }}>browse</span></div>
-              <div style={{ fontSize: '0.65rem', color: C.gray, marginTop: '0.2rem' }}>PDF, Excel, Word (Max 50MB)</div>
+          </div>
+          <button className="bg-blue-600 text-white rounded-lg px-4 py-2 flex items-center space-x-2 text-sm font-bold shadow-md shadow-blue-100 hover:bg-blue-700 transition-all active:transform active:scale-95">
+            <FileText className="w-4 h-4" />
+            <span>View CA Pack</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Score Summary Cards */}
+      <div className="grid grid-cols-5 gap-4 mb-6">
+        {[
+          { label: 'Overall Audit Readiness Score', percentage: 72, color: COLORS.blue, status: 'Good', trend: '↑ 12% vs Apr 2025' },
+          { label: 'Financial Audit Readiness', percentage: 68, color: COLORS.amber, status: 'Needs Improvement', trend: '↑ 10% vs Apr 2025' },
+          { label: 'Statutory Compliance Score', percentage: 91, color: COLORS.green, status: 'Excellent', trend: '↑ 4% vs Apr 2025' },
+          { label: 'Evidence Readiness Score', percentage: 74, color: COLORS.green, status: 'Good', trend: '↑ 11% vs Apr 2025' },
+        ].map((card, idx) => (
+          <div key={idx} className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{card.label}</span>
+              <Info className="w-3.5 h-3.5 text-slate-300" />
+            </div>
+            <GaugeCircle percentage={card.percentage} color={card.color} label={card.status} sublabel={card.trend} />
+          </div>
+        ))}
+        
+        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">High Risk Audit Gaps</span>
+          </div>
+          <div className="text-4xl font-black text-red-600 mt-2">7</div>
+          <div className="flex justify-between items-center mt-4">
+            <div className="flex flex-col">
+              <span className="text-[10px] text-slate-400 font-bold uppercase">High</span>
+              <span className="text-sm font-bold text-red-600">3</span>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[10px] text-slate-400 font-bold uppercase">Medium</span>
+              <span className="text-sm font-bold text-amber-600">3</span>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[10px] text-slate-400 font-bold uppercase">Low</span>
+              <span className="text-sm font-bold text-blue-600">1</span>
+            </div>
+          </div>
+          <div className="mt-4 pt-3 border-t border-slate-50 flex items-center justify-between text-blue-600 text-[11px] font-bold cursor-pointer group">
+            <span className="group-hover:underline">View All Gaps</span>
+            <ArrowRight className="w-3.5 h-3.5 transform group-hover:translate-x-1 transition-transform" />
+          </div>
+        </div>
+      </div>
+
+      {/* Main Grid: Matrix and Risk */}
+      <div className="grid grid-cols-12 gap-6 mb-6">
+        {/* Readiness Matrix */}
+        <div className="col-span-8 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center">
+            <div className="flex items-center space-x-2">
+              <h3 className="font-bold text-slate-800 text-sm tracking-tight">Financial Audit Readiness Matrix</h3>
+              <Info className="w-4 h-4 text-slate-200" />
+            </div>
+            <div className="flex items-center space-x-6 text-[10px] font-bold uppercase tracking-widest">
+              <div className="flex items-center space-x-1.5 text-red-600">
+                <span className="w-2 h-2 rounded-full bg-red-600"></span>
+                <span>High</span>
+              </div>
+              <div className="flex items-center space-x-1.5 text-amber-600">
+                <span className="w-2 h-2 rounded-full bg-amber-600"></span>
+                <span>Medium</span>
+              </div>
+              <div className="flex items-center space-x-1.5 text-emerald-600">
+                <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
+                <span>Low</span>
+              </div>
             </div>
           </div>
 
-          {/* Trend in Audit Readiness Score */}
-          <div style={{ backgroundColor: 'white', borderRadius: '0.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', padding: '1rem' }}>
-            <div style={{ fontWeight: '600', fontSize: '0.875rem', marginBottom: '0.75rem' }}>Trend in Audit Readiness Score</div>
-            <ResponsiveContainer width="100%" height={180}>
-              <LineChart data={trendData} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
-                <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} tickFormatter={v => v + '%'} />
-                <Tooltip formatter={v => [v + '%', 'Readiness']} />
-                <Line type="monotone" dataKey="score" stroke={C.blue} strokeWidth={2.5} dot={{ r: 4, fill: C.blue }} activeDot={{ r: 6 }} />
-              </LineChart>
-            </ResponsiveContainer>
-            <div style={{ textAlign: 'center', marginTop: '0.5rem' }}>
-              <span style={{ fontSize: '0.72rem', color: C.blue, cursor: 'pointer' }}>View Trend Analysis →</span>
+          <div className="px-5 py-3 bg-slate-50/50 border-b border-slate-100 flex items-center space-x-4">
+            <div className="relative flex-1">
+              <select className="appearance-none bg-white border border-slate-200 rounded-lg py-2 pl-3 pr-8 text-xs w-full font-semibold text-slate-600 focus:ring-2 focus:ring-blue-100 transition-all outline-none">
+                <option>All Audit Areas</option>
+              </select>
+              <ChevronDown className="w-4 h-4 text-slate-400 absolute right-2.5 top-2.5 pointer-events-none" />
             </div>
+            <div className="relative flex-1">
+              <select className="appearance-none bg-white border border-slate-200 rounded-lg py-2 pl-3 pr-8 text-xs w-full font-semibold text-slate-600 focus:ring-2 focus:ring-blue-100 transition-all outline-none">
+                <option>All Status</option>
+              </select>
+              <ChevronDown className="w-4 h-4 text-slate-400 absolute right-2.5 top-2.5 pointer-events-none" />
+            </div>
+            <div className="relative flex-1">
+              <select className="appearance-none bg-white border border-slate-200 rounded-lg py-2 pl-3 pr-8 text-xs w-full font-semibold text-slate-600 focus:ring-2 focus:ring-blue-100 transition-all outline-none">
+                <option>All Owners</option>
+              </select>
+              <ChevronDown className="w-4 h-4 text-slate-400 absolute right-2.5 top-2.5 pointer-events-none" />
+            </div>
+            <button className="flex items-center justify-center space-x-2 border border-slate-200 bg-white rounded-lg px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors">
+              <Filter className="w-3.5 h-3.5" />
+              <span>Filters</span>
+            </button>
           </div>
 
-          {/* CA Queries Summary */}
-          <div style={{ backgroundColor: 'white', borderRadius: '0.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', padding: '1rem' }}>
-            <div style={{ fontWeight: '600', fontSize: '0.875rem', marginBottom: '0.75rem' }}>CA Queries Summary</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.875rem' }}>
-              {[
-                { label: 'Total Open', val: openFindings, color: C.blue },
-                { label: 'High Priority', val: highFindings + criticalFindings, color: C.red },
-                { label: 'Due in 7 Days', val: Math.min(openFindings, 4), color: C.amber },
-                { label: 'Overdue', val: Math.min(criticalFindings, 2), color: C.red },
-              ].map(s => (
-                <div key={s.label} style={{ padding: '0.5rem 0.75rem', backgroundColor: C.lightBg, borderRadius: '0.375rem', textAlign: 'center' }}>
-                  <div style={{ fontSize: '1.25rem', fontWeight: '700', color: s.color }}>{s.val}</div>
-                  <div style={{ fontSize: '0.68rem', color: C.gray }}>{s.label}</div>
-                </div>
-              ))}
-            </div>
-            <div style={{ fontWeight: '600', fontSize: '0.75rem', marginBottom: '0.5rem', color: '#374151' }}>Recent Findings</div>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
+          <div className="overflow-x-auto max-h-[480px]">
+            <table className="w-full text-left">
+              <thead className="bg-slate-50/50 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100 sticky top-0 z-10">
                 <tr>
-                  {['Area','Severity','Status'].map(h => (
-                    <th key={h} style={{ ...thS, padding: '0.3rem 0.4rem', fontSize: '0.68rem' }}>{h}</th>
-                  ))}
+                  <th className="px-5 py-3">Audit Area</th>
+                  <th className="px-2 py-3 text-center">Status</th>
+                  <th className="px-2 py-3">Readiness %</th>
+                  <th className="px-2 py-3 text-center">Trend</th>
+                  <th className="px-2 py-3">Owner</th>
+                  <th className="px-2 py-3">Evidence</th>
+                  <th className="px-2 py-3 text-center">Risk</th>
+                  <th className="px-2 py-3 text-center">Queries</th>
+                  <th className="px-5 py-3 text-right">Due Date</th>
                 </tr>
               </thead>
-              <tbody>
-                {Object.entries(findingsBySev).slice(0, 4).map(([sev, count], i) => (
-                  <tr key={i}>
-                    <td style={{ ...tdS, padding: '0.3rem 0.4rem', fontSize: '0.72rem' }}>
-                      {Object.keys(txByCat)[i] || 'General'}
+              <tbody className="divide-y divide-slate-50">
+                {MATRIX_DATA.map((row, i) => (
+                  <tr key={i} className="hover:bg-blue-50/30 transition-colors group">
+                    <td className="px-5 py-3.5">
+                      <div className="flex items-center space-x-3">
+                        <div className="w-6 h-6 rounded bg-slate-100 flex items-center justify-center text-xs">📄</div>
+                        <span className="text-xs font-bold text-slate-700 group-hover:text-blue-600 transition-colors">{row.area}</span>
+                      </div>
                     </td>
-                    <td style={{ ...tdS, padding: '0.3rem 0.4rem' }}><RiskBadge level={sev === 'CRITICAL' || sev === 'HIGH' ? 'High' : sev === 'MEDIUM' ? 'Medium' : 'Low'} /></td>
-                    <td style={{ ...tdS, padding: '0.3rem 0.4rem', fontSize: '0.68rem', color: C.amber }}>Open</td>
+                    <td className="px-2 py-3.5 text-center">
+                      <span className={`px-2 py-1 rounded text-[9px] font-bold uppercase tracking-tight ${
+                        row.status === 'Green' ? 'bg-emerald-50 text-emerald-600' :
+                        row.status === 'Amber' ? 'bg-amber-50 text-amber-600' : 'bg-red-50 text-red-600'
+                      }`}>{row.status}</span>
+                    </td>
+                    <td className="px-2 py-3.5">
+                      <div className="flex items-center space-x-2">
+                        <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div className={`h-full rounded-full ${
+                            row.readiness > 80 ? 'bg-emerald-500' : row.readiness > 50 ? 'bg-amber-500' : 'bg-red-500'
+                          }`} style={{ width: `${row.readiness}%` }}></div>
+                        </div>
+                        <span className="text-[10px] font-bold text-slate-600">{row.readiness}%</span>
+                      </div>
+                    </td>
+                    <td className="px-2 py-3.5 text-center">
+                      <span className={`text-[10px] font-bold ${row.trend === '-' ? 'text-slate-300' : 'text-emerald-500'}`}>
+                        {row.trend}
+                      </span>
+                    </td>
+                    <td className="px-2 py-3.5 text-[10px] font-semibold text-slate-500">{row.owner}</td>
+                    <td className="px-2 py-3.5">
+                      <span className={`text-[10px] font-bold ${
+                        row.evidence.includes('Complete') ? 'text-emerald-600' :
+                        row.evidence.includes('Partial') ? 'text-amber-600' : 'text-red-600'
+                      }`}>{row.evidence}</span>
+                    </td>
+                    <td className="px-2 py-3.5 text-center">
+                      <span className={`text-[10px] font-bold ${
+                        row.risk === 'High' ? 'text-red-600' : row.risk === 'Medium' ? 'text-amber-600' : 'text-emerald-600'
+                      }`}>{row.risk}</span>
+                    </td>
+                    <td className="px-2 py-3.5 text-center">
+                      <span className="text-[10px] font-bold text-blue-600 underline cursor-pointer">{row.queries}</span>
+                    </td>
+                    <td className="px-5 py-3.5 text-right">
+                      <div className="flex flex-col items-end">
+                        <span className="text-[10px] font-bold text-slate-700">{row.dueDate}</span>
+                        <span className={`text-[8px] font-bold uppercase tracking-tighter ${row.dueStatus === 'overdue' ? 'text-red-500' : 'text-emerald-500'}`}>
+                          {row.dueStatus}
+                        </span>
+                      </div>
+                    </td>
                   </tr>
                 ))}
-                {Object.keys(findingsBySev).length === 0 && (
-                  <tr><td colSpan={3} style={{ padding: '1rem', textAlign: 'center', color: C.gray, fontSize: '0.75rem' }}>No findings yet</td></tr>
-                )}
               </tbody>
             </table>
-            <div style={{ textAlign: 'right', marginTop: '0.5rem' }}>
-              <span style={{ fontSize: '0.72rem', color: C.blue, cursor: 'pointer' }}>View All Queries →</span>
-            </div>
+          </div>
+          <div className="p-4 border-t border-slate-100 flex justify-between items-center text-xs text-slate-400 font-medium">
+            <span>Showing 1 to 12 of 12 entries</span>
+            <button className="text-blue-600 font-bold hover:underline flex items-center space-x-1">
+              <span>View Full Matrix</span>
+              <ArrowRight className="w-3 h-3" />
+            </button>
           </div>
         </div>
 
-        {/* ── Upcoming & Overdue Items ── */}
-        <div style={{ backgroundColor: 'white', borderRadius: '0.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', marginTop: '1.25rem', overflow: 'hidden' }}>
-          <div style={{ padding: '0.875rem 1.25rem', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontWeight: '600', fontSize: '0.875rem' }}>Upcoming & Overdue Items</span>
-            <span style={{ fontSize: '0.72rem', color: C.blue, cursor: 'pointer' }}>View Calendar →</span>
+        {/* Right Column: Exposure & Items */}
+        <div className="col-span-4 flex flex-col space-y-6">
+          {/* Financial Exposure */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+            <div className="flex justify-between items-center mb-6">
+              <div className="flex items-center space-x-2">
+                <h3 className="font-bold text-slate-800 text-sm">Financial Exposure & Risk</h3>
+                <Info className="w-3.5 h-3.5 text-slate-200" />
+              </div>
+              <button className="text-[10px] font-bold text-blue-600 hover:underline">View Details →</button>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4 mb-8">
+              <div className="bg-blue-50/50 p-3 rounded-lg border border-blue-50">
+                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter mb-1">Total Audit Risk Exposure</div>
+                <div className="text-sm font-black text-slate-900">₹ 2,45,00,000</div>
+              </div>
+              <div className="bg-red-50/50 p-3 rounded-lg border border-red-50">
+                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter mb-1">Potential Misstatement Risk</div>
+                <div className="text-sm font-black text-red-600">₹ 1,15,00,000</div>
+              </div>
+            </div>
+
+            <div className="flex flex-col items-center">
+              <div className="text-[11px] font-bold text-slate-700 w-full mb-2">Risk by Audit Area (₹)</div>
+              <div className="w-full flex items-center space-x-6">
+                <div className="w-1/2">
+                  <ResponsiveContainer width="100%" height={160}>
+                    <PieChart>
+                      <Pie
+                        data={RISK_PIE_DATA}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={45}
+                        outerRadius={65}
+                        paddingAngle={5}
+                        dataKey="value"
+                      >
+                        {RISK_PIE_DATA.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="absolute top-[68%] left-[28%] text-center pointer-events-none">
+                    <div className="text-xs font-black text-slate-800">₹ 2.45 Cr</div>
+                  </div>
+                </div>
+                <div className="w-1/2 space-y-3">
+                  {RISK_PIE_DATA.map((item, i) => (
+                    <div key={i} className="flex flex-col">
+                      <div className="flex items-center space-x-2">
+                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }}></span>
+                        <span className="text-[10px] font-bold text-slate-500 truncate">{item.name}</span>
+                      </div>
+                      <div className="flex justify-between items-center pl-4 mt-0.5">
+                        <span className="text-[10px] font-black text-slate-800">{item.value}%</span>
+                        <span className="text-[9px] font-semibold text-slate-400">{item.amount}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
-          <div style={{ display: 'flex', borderBottom: `1px solid ${C.border}` }}>
-            {[
-              { key: 'overdue', label: `Overdue (${criticalFindings})`, color: C.red },
-              { key: 'week',    label: `Due in 0-7 Days (${highFindings})`, color: C.amber },
-              { key: 'month',   label: `Due in 8-30 Days (${Math.max(0, openFindings - highFindings - criticalFindings)})`, color: C.blue },
-            ].map(tab => (
-              <button key={tab.key} onClick={() => setOverdueTab(tab.key)}
-                style={{ padding: '0.5rem 1rem', border: 'none', background: 'none', cursor: 'pointer', fontSize: '0.75rem', fontWeight: '600',
-                  color: overdueTab === tab.key ? tab.color : C.gray,
-                  borderBottom: overdueTab === tab.key ? `2px solid ${tab.color}` : '2px solid transparent' }}>
-                {tab.label}
-              </button>
+
+          {/* Upcoming & Overdue Items */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 flex-1 flex flex-col">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="font-bold text-slate-800 text-sm">Upcoming & Overdue Items</h3>
+              <button className="text-[10px] font-bold text-blue-600 hover:underline">View Calendar →</button>
+            </div>
+            
+            <div className="flex border-b border-slate-100 mb-4">
+              <button className="px-3 py-2 text-[10px] font-bold text-red-600 border-b-2 border-red-600">Overdue (3)</button>
+              <button className="px-3 py-2 text-[10px] font-bold text-slate-400">Due in 0-7 Days (2)</button>
+              <button className="px-3 py-2 text-[10px] font-bold text-slate-400">Due in 8-30 Days (4)</button>
+            </div>
+
+            <div className="space-y-4 flex-1">
+              <div className="grid grid-cols-4 text-[9px] font-black text-slate-400 uppercase tracking-widest px-2">
+                <div className="col-span-2">Item</div>
+                <div>Due Date</div>
+                <div className="text-right">Owner</div>
+              </div>
+              <div className="space-y-2 overflow-auto max-h-[180px]">
+                {OVERDUE_ITEMS.map((item, i) => (
+                  <div key={i} className="grid grid-cols-4 items-center bg-slate-50/50 rounded-lg p-2.5 border border-slate-50">
+                    <div className="col-span-2">
+                      <div className="text-[10px] font-bold text-slate-800">{item.item}</div>
+                      <div className="text-[8px] font-semibold text-slate-400 uppercase">{item.area}</div>
+                    </div>
+                    <div className="text-[10px] font-black text-red-500">{item.dueDate}</div>
+                    <div className="text-[9px] font-bold text-slate-600 text-right">{item.owner.split(' ')[0]}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <button className="mt-6 w-full py-2 bg-slate-50 rounded-lg text-[10px] font-bold text-blue-600 hover:bg-slate-100 transition-colors uppercase tracking-wider">View All Items</button>
+          </div>
+        </div>
+      </div>
+
+      {/* Bottom Row: Evidence Readiness, Trend, CA Queries */}
+      <div className="grid grid-cols-12 gap-6">
+        {/* Audit Evidence Readiness */}
+        <div className="col-span-5 bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+          <div className="flex items-center space-x-2 mb-6">
+            <h3 className="font-bold text-slate-800 text-sm">Audit Evidence Readiness</h3>
+            <Info className="w-3.5 h-3.5 text-slate-200" />
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead className="text-[9px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-50">
+                <tr>
+                  <th className="py-2">Evidence Category</th>
+                  <th className="py-2 text-center">Req</th>
+                  <th className="py-2 text-center">Upld</th>
+                  <th className="py-2 text-center">Veri</th>
+                  <th className="py-2 text-center text-red-500">Miss</th>
+                  <th className="py-2 text-right">Readiness %</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {EVIDENCE_DATA.map((row, i) => (
+                  <tr key={i} className="text-[10px] font-bold text-slate-700">
+                    <td className="py-3 text-slate-500">{row.category}</td>
+                    <td className="py-3 text-center">{row.required}</td>
+                    <td className="py-3 text-center">{row.uploaded}</td>
+                    <td className="py-3 text-center">{row.verified}</td>
+                    <td className="py-3 text-center text-red-500">{row.missing}</td>
+                    <td className="py-3 text-right">
+                      <div className="flex items-center justify-end space-x-2">
+                        <div className="w-12 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div className="h-full bg-blue-500 rounded-full" style={{ width: `${row.readiness}%` }}></div>
+                        </div>
+                        <span className="w-6 text-right text-slate-600">{row.readiness}%</span>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Trend Analysis */}
+        <div className="col-span-4 bg-white rounded-xl border border-slate-200 shadow-sm p-5 flex flex-col">
+          <div className="flex items-center space-x-2 mb-6">
+            <h3 className="font-bold text-slate-800 text-sm">Trend in Audit Readiness Score</h3>
+            <Info className="w-3.5 h-3.5 text-slate-200" />
+          </div>
+          <div className="flex-1 min-h-[220px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={TREND_DATA} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8', fontWeight: 600 }} dy={10} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8', fontWeight: 600 }} domain={[0, 100]} />
+                <Tooltip />
+                <Area type="monotone" dataKey="score" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorScore)" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="mt-4 pt-3 border-t border-slate-50 flex justify-center">
+            <button className="text-blue-600 font-extrabold text-[10px] uppercase tracking-widest hover:underline">View Trend Analysis →</button>
+          </div>
+        </div>
+
+        {/* CA Queries Summary */}
+        <div className="col-span-3 bg-white rounded-xl border border-slate-200 shadow-sm p-5 flex flex-col">
+          <div className="flex justify-between items-center mb-6">
+            <div className="flex items-center space-x-2">
+              <h3 className="font-bold text-slate-800 text-sm">CA Queries Summary</h3>
+              <Info className="w-3.5 h-3.5 text-slate-200" />
+            </div>
+            <button className="text-[10px] font-bold text-blue-600 hover:underline">View All →</button>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-3 mb-6">
+            <div className="bg-slate-50 rounded-lg p-3 text-center flex flex-col items-center">
+              <div className="text-[9px] font-bold text-slate-400 uppercase mb-1">Total Open</div>
+              <div className="text-xl font-black text-blue-600">9</div>
+            </div>
+            <div className="bg-slate-50 rounded-lg p-3 text-center flex flex-col items-center">
+              <div className="text-[9px] font-bold text-slate-400 uppercase mb-1">High Priority</div>
+              <div className="text-xl font-black text-red-600">3</div>
+            </div>
+            <div className="bg-slate-50 rounded-lg p-3 text-center flex flex-col items-center">
+              <div className="text-[9px] font-bold text-slate-400 uppercase mb-1">Due 0-7 Days</div>
+              <div className="text-xl font-black text-amber-600">4</div>
+            </div>
+            <div className="bg-slate-50 rounded-lg p-3 text-center flex flex-col items-center">
+              <div className="text-[9px] font-bold text-slate-400 uppercase mb-1">Overdue</div>
+              <div className="text-xl font-black text-red-600">2</div>
+            </div>
+          </div>
+
+          <div className="flex-1 space-y-3">
+            <div className="text-[10px] font-black text-slate-700 uppercase tracking-tighter border-b border-slate-100 pb-2">Recent CA Queries</div>
+            {RECENT_QUERIES.map((q, i) => (
+              <div key={i} className="bg-slate-50/50 rounded-lg p-3 border border-slate-50">
+                <div className="text-[10px] font-bold text-slate-800 mb-1">{q.query}</div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[8px] font-bold text-slate-400 uppercase">{q.area}</span>
+                  <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase ${
+                    q.status === 'Open' ? 'bg-blue-100 text-blue-600' : 'bg-amber-100 text-amber-600'
+                  }`}>{q.status}</span>
+                </div>
+              </div>
             ))}
           </div>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead style={{ backgroundColor: C.lightBg }}>
-              <tr>
-                {['Item','Audit Area','Due Date','Owner'].map(h => (
-                  <th key={h} style={thS}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {projectReadiness.slice(0, 3).map((p, i) => (
-                <tr key={i}>
-                  <td style={{ ...tdS, fontWeight: '500' }}>{p.name} — Evidence Review</td>
-                  <td style={tdS}>{Object.keys(txByCat)[i] || 'General'}</td>
-                  <td style={{ ...tdS, color: overdueTab === 'overdue' ? C.red : C.amber, fontWeight: '600' }}>
-                    {new Date(Date.now() - (overdueTab === 'overdue' ? (i + 1) * 86400000 : -(i + 1) * 86400000)).toLocaleDateString('en-IN')}
-                  </td>
-                  <td style={{ ...tdS, color: C.gray }}>Finance Manager</td>
-                </tr>
-              ))}
-              {projectReadiness.length === 0 && (
-                <tr><td colSpan={4} style={{ padding: '2rem', textAlign: 'center', color: C.gray, fontSize: '0.8rem' }}>No items</td></tr>
-              )}
-            </tbody>
-          </table>
+          <button className="mt-6 w-full py-2 bg-slate-50 rounded-lg text-[10px] font-bold text-blue-600 hover:bg-slate-100 transition-colors uppercase tracking-wider">View All Queries</button>
         </div>
-
       </div>
     </div>
   );
-}
+};
+
+export default Dashboard;

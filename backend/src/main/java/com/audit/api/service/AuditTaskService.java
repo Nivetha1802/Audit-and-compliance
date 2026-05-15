@@ -2,8 +2,6 @@ package com.audit.api.service;
 
 import com.audit.api.entity.AuditTask;
 import com.audit.api.entity.TaskComment;
-import com.audit.api.entity.Risk;
-import com.audit.api.entity.Project;
 import com.audit.api.entity.User;
 import com.audit.api.entity.AuditActionLog;
 import com.audit.api.repository.AuditTaskRepository;
@@ -12,6 +10,7 @@ import com.audit.api.repository.RiskRepository;
 import com.audit.api.repository.ProjectRepository;
 import com.audit.api.repository.UserRepository;
 import com.audit.api.repository.AuditActionLogRepository;
+import com.audit.api.util.SecurityUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +28,7 @@ public class AuditTaskService {
     private final UserRepository userRepository;
     private final EmailService emailService;
     private final AuditActionLogRepository auditActionLogRepository;
+    private final SecurityUtils securityUtils;
 
     public AuditTaskService(AuditTaskRepository auditTaskRepository,
                             TaskCommentRepository taskCommentRepository,
@@ -36,7 +36,8 @@ public class AuditTaskService {
                             ProjectRepository projectRepository,
                             UserRepository userRepository,
                             EmailService emailService,
-                            AuditActionLogRepository auditActionLogRepository) {
+                            AuditActionLogRepository auditActionLogRepository,
+                            SecurityUtils securityUtils) {
         this.auditTaskRepository = auditTaskRepository;
         this.taskCommentRepository = taskCommentRepository;
         this.riskRepository = riskRepository;
@@ -44,14 +45,18 @@ public class AuditTaskService {
         this.userRepository = userRepository;
         this.emailService = emailService;
         this.auditActionLogRepository = auditActionLogRepository;
+        this.securityUtils = securityUtils;
     }
 
     public List<AuditTask> getAllTasks() {
-        return auditTaskRepository.findAll();
+        return auditTaskRepository.findByOrganizationId(securityUtils.getCurrentOrganizationId());
     }
 
     public List<AuditTask> getTasksByProject(UUID projectId) {
-        return auditTaskRepository.findByProjectId(projectId);
+        UUID orgId = securityUtils.getCurrentOrganizationId();
+        return auditTaskRepository.findByProjectId(projectId).stream()
+                .filter(t -> orgId.equals(t.getOrganizationId()))
+                .toList();
     }
 
     @Transactional
@@ -65,6 +70,7 @@ public class AuditTaskService {
         task.setTransactionId(transactionId);
         task.setStatus("OPEN");
         task.setPriority("MEDIUM");
+        task.setOrganizationId(securityUtils.getCurrentOrganizationId());
         return auditTaskRepository.save(task);
     }
 
@@ -73,9 +79,18 @@ public class AuditTaskService {
         AuditTask task = auditTaskRepository.findById(taskId)
                 .orElseThrow(() -> new RuntimeException("Task not found"));
         
+        if (userId == null) {
+            userId = securityUtils.getCurrentUser().getId();
+        }
+
         String oldStatus = task.getStatus();
         task.setStatus(status);
         AuditTask updatedTask = auditTaskRepository.save(task);
+
+        // Update associated risk if all tasks are closed/completed
+        if ("COMPLETED".equals(status) || "CLOSED".equals(status)) {
+            updateRiskStatusIfAllTasksClosed(task.getRiskId(), userId);
+        }
 
         // Log action
         auditActionLogRepository.save(AuditActionLog.builder()
@@ -96,10 +111,15 @@ public class AuditTaskService {
         AuditTask task = auditTaskRepository.findById(taskId)
                 .orElseThrow(() -> new RuntimeException("Task not found"));
 
+        if (userId == null) {
+            userId = securityUtils.getCurrentUser().getId();
+        }
+
         TaskComment comment = new TaskComment();
         comment.setTaskId(taskId);
         comment.setUserId(userId);
         comment.setComment(content);
+        comment.setOrganizationId(securityUtils.getCurrentOrganizationId());
         
         User user = userRepository.findById(userId).orElse(null);
         if (user != null) {
@@ -142,18 +162,48 @@ public class AuditTaskService {
         }
 
         // 3. Project Owner
-        projectRepository.findById(task.getProjectId()).ifPresent(project -> {
-            if (project.getProjectOwnerId() != null) {
-                userRepository.findById(project.getProjectOwnerId())
-                    .ifPresent(u -> { if (u.getEmail() != null) recipients.add(u.getEmail()); });
-            }
-        });
+        if (task.getProjectId() != null) {
+            projectRepository.findById(task.getProjectId()).ifPresent(project -> {
+                if (project.getProjectOwnerId() != null) {
+                    userRepository.findById(project.getProjectOwnerId())
+                        .ifPresent(u -> { if (u.getEmail() != null) recipients.add(u.getEmail()); });
+                }
+            });
+        }
 
         String subject = "Audit Task Notification: " + task.getTitle();
         String message = "The following action occurred on task '" + task.getTitle() + "': " + action;
         
         for (String email : recipients) {
             emailService.sendEmail(email, subject, message);
+        }
+    }
+
+    private void updateRiskStatusIfAllTasksClosed(UUID riskId, UUID userId) {
+        if (riskId == null) return;
+
+        List<AuditTask> tasks = auditTaskRepository.findByRiskId(riskId);
+        boolean allClosed = tasks.stream()
+                .allMatch(t -> "COMPLETED".equals(t.getStatus()) || "CLOSED".equals(t.getStatus()));
+
+        if (allClosed) {
+            riskRepository.findById(riskId).ifPresent(risk -> {
+                if (!"RESOLVED".equals(risk.getStatus())) {
+                    String oldStatus = risk.getStatus();
+                    risk.setStatus("RESOLVED");
+                    riskRepository.save(risk);
+
+                    // Log action
+                    auditActionLogRepository.save(AuditActionLog.builder()
+                            .entityType("RISK")
+                            .entityId(riskId)
+                            .actionType("STATUS_CHANGE")
+                            .performedBy(userId)
+                            .details("Risk automatically moved to RESOLVED because all associated tasks are closed (previously: " + oldStatus + ")")
+                            .projectId(risk.getProjectId())
+                            .build());
+                }
+            });
         }
     }
 
@@ -168,5 +218,22 @@ public class AuditTaskService {
             taskCommentRepository.deleteByTaskIdIn(List.of(task.getId()));
         }
         auditTaskRepository.deleteByRiskId(riskId);
+    }
+
+    @Transactional
+    public void deleteTask(UUID taskId) {
+        taskCommentRepository.deleteByTaskIdIn(List.of(taskId));
+        auditTaskRepository.deleteById(taskId);
+    }
+
+    @Transactional
+    public int deleteTestTasks() {
+        List<AuditTask> testTasks = auditTaskRepository.findByTitleContainingIgnoreCaseOrDescriptionContainingIgnoreCase("test", "test");
+        if (testTasks.isEmpty()) return 0;
+        
+        List<UUID> taskIds = testTasks.stream().map(AuditTask::getId).toList();
+        taskCommentRepository.deleteByTaskIdIn(taskIds);
+        auditTaskRepository.deleteAllById(taskIds);
+        return testTasks.size();
     }
 }

@@ -6,12 +6,15 @@ import com.audit.api.repository.TransactionRepository;
 import com.audit.api.repository.VendorRepository;
 import com.audit.api.util.SecurityUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.math.BigDecimal;
+import java.util.Map;
+import java.util.HashMap;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -35,7 +38,7 @@ public class TransactionService {
                                SecurityUtils securityUtils,
                                CategoryMappingService categoryMappingService,
                                BankValidationService bankValidationService,
-                               AuditLifecycleService auditLifecycleService,
+                               @Lazy AuditLifecycleService auditLifecycleService,
                                VendorRepository vendorRepository,
                                GstVerificationService gstVerificationService) {
         this.transactionRepository = transactionRepository;
@@ -51,9 +54,67 @@ public class TransactionService {
         return transactionRepository.findByOrganizationId(securityUtils.getCurrentOrganizationId());
     }
 
+    public Transaction getTransactionById(UUID id) {
+        return transactionRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Transaction not found"));
+    }
+
     public List<Transaction> getTransactionsByProject(UUID projectId) {
         return transactionRepository.findByOrganizationIdAndProjectId(
                 securityUtils.getCurrentOrganizationId(), projectId);
+    }
+
+    public List<Transaction> getAllLedgerTransactions() {
+        UUID orgId = securityUtils.getCurrentOrganizationId();
+        List<Transaction> ledger = transactionRepository.findByOrganizationIdAndSource(orgId, "LEDGER");
+        if (ledger.isEmpty()) {
+            return transactionRepository.findByOrganizationId(orgId)
+                    .stream()
+                    .filter(t -> t.getSource() == null || "LEDGER".equals(t.getSource()))
+                    .toList();
+        }
+        return ledger;
+    }
+
+    public List<Transaction> getLedgerTransactionsByProject(UUID projectId) {
+        UUID orgId = securityUtils.getCurrentOrganizationId();
+        List<Transaction> ledgerTxns = transactionRepository
+                .findByOrganizationIdAndProjectIdAndSource(orgId, projectId, "LEDGER");
+        if (ledgerTxns.isEmpty()) {
+            return transactionRepository
+                    .findByOrganizationIdAndProjectId(orgId, projectId)
+                    .stream()
+                    .filter(t -> t.getSource() == null || "LEDGER".equals(t.getSource()))
+                    .toList();
+        }
+        return ledgerTxns;
+    }
+
+
+    public Transaction populateVendorNames(Transaction tx) {
+        if (tx.getVendorId() != null) {
+            vendorRepository.findById(tx.getVendorId()).ifPresent(v -> tx.setVendorName(v.getName()));
+        } else {
+            tx.setVendorName(tx.getVendorCustomer());
+        }
+        return tx;
+    }
+
+    public List<Transaction> populateVendorNames(List<Transaction> txs) {
+        Map<UUID, String> vendorCache = new HashMap<>();
+        for (Transaction tx : txs) {
+            if (tx.getVendorId() != null) {
+                String name = vendorCache.get(tx.getVendorId());
+                if (name == null) {
+                    name = vendorRepository.findById(tx.getVendorId()).map(Vendor::getName).orElse(tx.getVendorCustomer());
+                    vendorCache.put(tx.getVendorId(), name);
+                }
+                tx.setVendorName(name);
+            } else {
+                tx.setVendorName(tx.getVendorCustomer());
+            }
+        }
+        return txs;
     }
 
     public ImportResult importFromCsv(MultipartFile file, UUID projectId) throws Exception {
@@ -86,11 +147,10 @@ public class TransactionService {
                 tx.setReferenceNo(get(data, 10));
                 tx.setProjectId(projectId);
                 tx.setStatus("PENDING_EVIDENCE");
+                tx.setSource("LEDGER");
                 tx.setOrganizationId(orgId);
 
-                // Auto-link vendor by name matching
                 autoLinkVendor(tx, orgId);
-
                 categoryMappingService.autoTag(tx, orgId);
                 bankValidationService.evaluateBankValidationRequirement(tx);
                 transactions.add(tx);
@@ -150,6 +210,7 @@ public class TransactionService {
                             ? UUID.randomUUID().toString().substring(0, 8) : bankRef));
                     tx.setProjectId(projectId);
                     tx.setStatus("PENDING_EVIDENCE");
+                    tx.setSource("BANK");
                     tx.setOrganizationId(orgId);
                     bankValidationService.evaluateBankValidationRequirement(tx);
                     toSave.add(tx);
@@ -162,8 +223,7 @@ public class TransactionService {
     }
 
     public Transaction updateStatus(UUID id, String status) {
-        Transaction tx = transactionRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Transaction not found"));
+        Transaction tx = getTransactionById(id);
         if (!tx.getOrganizationId().equals(securityUtils.getCurrentOrganizationId()))
             throw new RuntimeException("Unauthorized access");
         tx.setStatus(status);
@@ -175,9 +235,16 @@ public class TransactionService {
         return transactionRepository.findById(id).orElse(tx);
     }
 
+    public Transaction updateAuditStatus(UUID id, String status) {
+        Transaction tx = getTransactionById(id);
+        if (!tx.getOrganizationId().equals(securityUtils.getCurrentOrganizationId()))
+            throw new RuntimeException("Unauthorized access");
+        tx.setAuditStatus(status);
+        return transactionRepository.save(tx);
+    }
+
     public Transaction linkVendor(UUID id, UUID vendorId) {
-        Transaction tx = transactionRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Transaction not found"));
+        Transaction tx = getTransactionById(id);
         if (!tx.getOrganizationId().equals(securityUtils.getCurrentOrganizationId()))
             throw new RuntimeException("Unauthorized access");
         tx.setVendorId(vendorId);
@@ -185,11 +252,6 @@ public class TransactionService {
         return transactionRepository.save(tx);
     }
 
-    /**
-     * Auto-link a vendor to a transaction by fuzzy-matching the imported
-     * vendor/customer name against registered vendor names and legal names.
-     * Exact match wins; otherwise uses Levenshtein similarity ≥ 85%.
-     */
     public void autoLinkVendor(Transaction tx, UUID orgId) {
         String importedName = tx.getVendorCustomer();
         if (importedName == null || importedName.isBlank()) return;
@@ -199,32 +261,25 @@ public class TransactionService {
         double highestScore = 0;
 
         for (Vendor v : vendors) {
-            // Exact match (case-insensitive)
             if (importedName.equalsIgnoreCase(v.getName()) ||
                     (v.getLegalName() != null && importedName.equalsIgnoreCase(v.getLegalName()))) {
                 tx.setVendorId(v.getId());
                 return;
             }
-
-            // Fuzzy match
             double score1 = gstVerificationService.calculateNameSimilarity(importedName, v.getName());
             double score2 = v.getLegalName() != null
                     ? gstVerificationService.calculateNameSimilarity(importedName, v.getLegalName())
                     : 0;
             double best = Math.max(score1, score2);
-
             if (best >= 85 && best > highestScore) {
                 highestScore = best;
                 bestMatch = v;
             }
         }
-
         if (bestMatch != null) {
             tx.setVendorId(bestMatch.getId());
         }
     }
-
-    // ── helpers ───────────────────────────────────────────────────────────────
 
     private LocalDate parseDate(String s) {
         String[] patterns = {"dd-MM-yyyy", "yyyy-MM-dd", "dd/MM/yyyy", "MM/dd/yyyy", "d-M-yyyy"};

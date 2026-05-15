@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { projectApi, transactionApi, riskApi, aiApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, Play, RefreshCw, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Play, RefreshCw, AlertCircle, ChevronRight } from 'lucide-react';
 
 // ── Stat Card ─────────────────────────────────────────────────────────────────
 function StatCard({ label, value, sub, color, icon }) {
@@ -109,22 +109,36 @@ function ValidationResultsTable({ result }) {
         <div style={{ display: 'flex', gap: '1rem', fontSize: '0.75rem' }}>
           <span style={{ color: '#059669', fontWeight: '600' }}>✅ Passed: {summary.rulesPassed}</span>
           <span style={{ color: '#dc2626', fontWeight: '600' }}>❌ Failed: {summary.rulesFailed}</span>
+          {summary.pendingEvidence > 0 && <span style={{ color: '#d97706', fontWeight: '600' }}>⏳ Pending Evidence: {summary.pendingEvidence}</span>}
         </div>
       </div>
 
       <div style={{ padding: '1.25rem', backgroundColor: '#f8fafc', borderBottom: '1px solid #e5e7eb' }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem' }}>
           {rules.map(rule => {
-            const passedCount = ruleStats[rule.key] || 0;
-            const total = summary.totalTransactions || 0;
-            const failCount = total - passedCount;
+            const passedCount  = ruleStats[rule.key] || 0;
+            const total        = summary.totalTransactions || 0;
+            const pending      = summary.pendingEvidence   || 0;
+            const eligible     = total - pending;
+            const failCount    = eligible - passedCount;
+
+            let label, labelColor;
+            if (eligible === 0) {
+              label      = '⏳ No Evidence';
+              labelColor = '#d97706';
+            } else if (failCount > 0) {
+              label      = `❌ ${failCount} Failed`;
+              labelColor = '#dc2626';
+            } else {
+              label      = `✅ Passed`;
+              labelColor = '#059669';
+            }
+
             return (
-              <div key={rule.key} style={{ backgroundColor: 'white', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div key={rule.key} style={{ backgroundColor: 'white', padding: '0.75rem', borderRadius: '0.5rem', border: `1px solid ${labelColor}33`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ fontSize: '0.75rem', fontWeight: '600', color: '#475569' }}>{rule.name}</div>
                 <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.75rem' }}>
-                  <span style={{ color: failCount > 0 ? '#dc2626' : '#059669', fontWeight: '700' }}>
-                    {failCount > 0 ? `❌ ${failCount} Failed` : `✅ Passed`}
-                  </span>
+                  <span style={{ color: labelColor, fontWeight: '700' }}>{label}</span>
                 </div>
               </div>
             );
@@ -140,7 +154,7 @@ function ValidationResultsTable({ result }) {
           <thead style={{ backgroundColor: '#f8fafc' }}>
             <tr>
               <th style={thStyle}>Transaction #</th>
-              <th style={thStyle}>Status</th>
+              <th style={thStyle}>Analysis Status</th>
               <th style={thStyle}>Findings / Issues</th>
             </tr>
           </thead>
@@ -151,8 +165,8 @@ function ValidationResultsTable({ result }) {
                 <td style={tdStyle}>
                   <span style={{ 
                     padding: '0.2rem 0.6rem', borderRadius: '9999px', fontSize: '0.7rem', fontWeight: '600', 
-                    backgroundColor: tx.status === 'SUCCESS' ? '#d1fae5' : '#fef2f2', 
-                    color: tx.status === 'SUCCESS' ? '#065f46' : '#991b1b' 
+                    backgroundColor: tx.status === 'SUCCESS' ? '#d1fae5' : tx.status === 'PENDING_EVIDENCE' ? '#fef3c7' : '#fef2f2', 
+                    color: tx.status === 'SUCCESS' ? '#065f46' : tx.status === 'PENDING_EVIDENCE' ? '#92400e' : '#991b1b' 
                   }}>
                     {tx.status}
                   </span>
@@ -162,6 +176,8 @@ function ValidationResultsTable({ result }) {
                     <ul style={{ margin: 0, paddingLeft: '1.2rem', color: '#dc2626' }}>
                       {tx.issues.map((issue, i) => <li key={i}>{issue}</li>)}
                     </ul>
+                  ) : tx.status === 'PENDING_EVIDENCE' ? (
+                    <span style={{ color: '#d97706' }}>Evidence missing for validation</span>
                   ) : (
                     <span style={{ color: '#059669' }}>All checks passed</span>
                   )}
@@ -192,8 +208,8 @@ function DuplicatesList({ duplicates, analysisRan }) {
       <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '0.75rem', padding: '1.25rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
         <span style={{ fontSize: '1.5rem' }}>✅</span>
         <div>
-          <div style={{ fontWeight: '700', color: '#065f46', fontSize: '0.95rem' }}>No Duplicate Transactions Detected</div>
-          <div style={{ fontSize: '0.8rem', color: '#047857', marginTop: '0.2rem' }}>All transactions passed the duplicate detection check.</div>
+          <div style={{ fontWeight: '700', color: '#065f46', fontSize: '0.95rem' }}>No Duplicate Evidences Detected</div>
+          <div style={{ fontSize: '0.8rem', color: '#047857', marginTop: '0.2rem' }}>All transactions passed the duplicate evidences check.</div>
         </div>
       </div>
     );
@@ -221,6 +237,150 @@ function DuplicatesList({ duplicates, analysisRan }) {
   );
 }
 
+// ── Project List View (Table) ────────────────────────────────────────────────
+const AUDIT_STATUSES = [
+  'Evidence_Collection',
+  'Internal_Audit',
+  'Audit_Ready',
+  'Completed'
+];
+
+const AUDIT_STATUS_COLORS = {
+  Evidence_Collection: '#3b82f6', // blue
+  Internal_Audit:      '#f59e0b', // amber
+  Audit_Ready:         '#8b5cf6', // purple
+  Completed:           '#10b981'  // green
+};
+
+function ProjectListTable({ onSelectProject }) {
+  const { user: currentUser } = useAuth();
+  const [projects, setProjects] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchProjects();
+  }, []);
+
+  const fetchProjects = async () => {
+    setLoading(true);
+    try {
+      const res = await projectApi.getAll();
+      setProjects(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.error('Failed to fetch projects:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleStatusChange = async (projectId, newStatus) => {
+    try {
+      await projectApi.updateAuditStatus(projectId, newStatus);
+      setProjects(prev => prev.map(p => p.id === projectId ? { ...p, auditStatus: newStatus } : p));
+    } catch (err) {
+      alert('Failed to update audit status');
+      console.error(err);
+    }
+  };
+
+  const isAuditor = currentUser?.role === 'AUDITOR' || currentUser?.role === 'ADMIN';
+
+  const thStyle = { textAlign: 'left', padding: '1rem', fontSize: '0.75rem', color: '#475569', fontWeight: '700', borderBottom: '2px solid #e2e8f0', backgroundColor: '#f8fafc' };
+  const tdStyle = { padding: '1rem', fontSize: '0.875rem', borderBottom: '1px solid #f1f5f9' };
+
+  if (loading) return <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>Loading projects...</div>;
+
+  return (
+    <div style={{ backgroundColor: 'white', borderRadius: '1rem', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', border: '1px solid #e5e7eb', overflow: 'hidden' }}>
+      <div style={{ padding: '1.25rem', borderBottom: '1px solid #e5e7eb', backgroundColor: '#f8fafc' }}>
+        <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '700', color: '#1e293b' }}>Project Audit Lifecycle</h2>
+        <p style={{ margin: '0.25rem 0 0', fontSize: '0.8rem', color: '#64748b' }}>Select a project to analyze or update its audit stage.</p>
+      </div>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr>
+              <th style={thStyle}>Project Name</th>
+              <th style={thStyle}>Code</th>
+              <th style={thStyle}>Audit Stage</th>
+              <th style={{ ...thStyle, textAlign: 'right' }}>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {projects.map(p => (
+              <tr key={p.id} style={{ transition: 'background-color 0.2s' }} onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f8fafc'} onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}>
+                <td style={{ ...tdStyle, fontWeight: '600', color: '#1e293b' }}>{p.name}</td>
+                <td style={{ ...tdStyle, color: '#64748b', fontSize: '0.8rem' }}>{p.projectCode || 'N/A'}</td>
+                <td style={tdStyle}>
+                  {isAuditor ? (
+                    <select
+                      value={p.auditStatus || ''}
+                      onChange={(e) => handleStatusChange(p.id, e.target.value)}
+                      style={{
+                        padding: '0.4rem 0.6rem',
+                        borderRadius: '0.5rem',
+                        border: `1px solid ${AUDIT_STATUS_COLORS[p.auditStatus] || '#cbd5e1'}`,
+                        fontSize: '0.8rem',
+                        fontWeight: '600',
+                        backgroundColor: 'white',
+                        color: AUDIT_STATUS_COLORS[p.auditStatus] || '#1e293b',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <option value="">Select Stage...</option>
+                      {AUDIT_STATUSES.map(s => (
+                        <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span style={{ 
+                      padding: '0.3rem 0.75rem', 
+                      borderRadius: '0.5rem', 
+                      fontSize: '0.75rem', 
+                      fontWeight: '700',
+                      backgroundColor: `${AUDIT_STATUS_COLORS[p.auditStatus] || '#cbd5e1'}22`,
+                      color: AUDIT_STATUS_COLORS[p.auditStatus] || '#64748b',
+                      border: `1px solid ${AUDIT_STATUS_COLORS[p.auditStatus] || '#cbd5e1'}44`
+                    }}>
+                      {p.auditStatus ? p.auditStatus.replace(/_/g, ' ') : 'Not Set'}
+                    </span>
+                  )}
+                </td>
+                <td style={{ ...tdStyle, textAlign: 'right' }}>
+                  <button
+                    onClick={() => onSelectProject(p)}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.4rem',
+                      padding: '0.5rem 1rem',
+                      backgroundColor: '#2563eb',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '0.5rem',
+                      fontSize: '0.8rem',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                      boxShadow: '0 2px 4px rgba(37,99,235,0.2)'
+                    }}
+                  >
+                    Analyze <ChevronRight size={14} />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {projects.length === 0 && (
+          <div style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>
+            No projects found in this organization.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Analysis Dashboard ────────────────────────────────────────────────────────
 function AnalysisDashboard({ project, onBack }) {
   const { user: currentUser } = useAuth();
@@ -242,13 +402,11 @@ function AnalysisDashboard({ project, onBack }) {
     setLoading(true);
     try {
       const [tRes, rRes] = await Promise.all([
-        transactionApi.getAll(),
+        transactionApi.getLedgerByProject(project.id),
         riskApi.getAll()
       ]);
-      const projTxs = tRes.data.filter(t => t.projectId === project.id);
-      const projRisks = rRes.data.filter(r => r.projectId === project.id);
-      setTransactions(projTxs);
-      setRisks(projRisks);
+      setTransactions(tRes.data);
+      setRisks(rRes.data.filter(r => r.projectId === project.id));
     } catch (err) {
       console.error(err);
     } finally {
@@ -333,128 +491,44 @@ function AnalysisDashboard({ project, onBack }) {
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
-        <StatCard label="Total Transactions"   value={transactions.length}  sub="in this project"        color="#2563eb" icon="📊" />
-        <StatCard label="Compliance Rate"       value={`${compliancePct}%`}  sub={`${approved} approved`} color={compliancePct >= 80 ? '#059669' : '#d97706'} icon="✅" />
-        <StatCard label="Pending Evidence"      value={pending}              sub="need attention"         color="#d97706" icon="⏳" />
-        <StatCard label="Open Risks"            value={openRisks}            sub={criticalRisks > 0 ? `${criticalRisks} HIGH` : 'no high risk'} color={openRisks > 0 ? '#dc2626' : '#059669'} icon="⚠️" />
+        <StatCard label="Transactions Analyzed" value={transactions.length} sub="ledger entries" color="#2563eb" icon="📁" />
+        <StatCard label="Compliance Score"     value={`${compliancePct}%`} sub="based on approved"   color="#059669" icon="⚖️" />
+        <StatCard label="Unvalidated Items"    value={pending}             sub="awaiting evidence"   color="#d97706" icon="⏳" />
+        <StatCard label="Open Risks Found"     value={openRisks}           sub={`${criticalRisks} critical`} color="#dc2626" icon="🚨" />
       </div>
 
       <AiInsightsPanel insights={aiInsights} loading={insightsLoading} error={insightsError} />
-      <ValidationResultsTable result={analysisResult} />
-      <DuplicatesList duplicates={analysisResult?.duplicates} analysisRan={!!analysisResult} />
+      
+      {analysisResult && (
+        <>
+          <DuplicatesList duplicates={analysisResult.duplicateCheck} analysisRan={true} />
+          <ValidationResultsTable result={analysisResult} />
+        </>
+      )}
     </div>
   );
 }
 
-// ── Projects Table ───────────────────────────────────────────────────────────
-function ProjectsTable({ projects, transactions, onSelect }) {
-  const thStyle = {
-    textAlign: 'left', padding: '0.75rem 1rem', fontSize: '0.75rem',
-    color: '#6b7280', fontWeight: '600', borderBottom: '2px solid #e5e7eb',
-    whiteSpace: 'nowrap', backgroundColor: '#f9fafb',
-  };
-  const tdStyle = { padding: '0.75rem 1rem', fontSize: '0.85rem', verticalAlign: 'middle' };
+// ── Main Page Component ───────────────────────────────────────────────────────
+export default function ConductAuditAnalysis() {
+  const [selectedProject, setSelectedProject] = useState(null);
 
   return (
-    <div>
-      <div style={{ marginBottom: '1.5rem' }}>
-        <h1 style={{ margin: '0 0 0.25rem', fontSize: '1.5rem', fontWeight: '700', color: '#111827' }}>
-          🔬 Conduct Audit Analysis
-        </h1>
-        <p style={{ margin: 0, fontSize: '0.875rem', color: '#6b7280' }}>
-          Select a project to run AI-powered audit analysis and get improvement recommendations.
-        </p>
-      </div>
-
-      <div style={{ backgroundColor: 'white', borderRadius: '0.75rem', boxShadow: '0 1px 4px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr>
-              <th style={thStyle}>#</th>
-              <th style={thStyle}>Project Name</th>
-              <th style={thStyle}>Code</th>
-              <th style={thStyle}>Audit Status</th>
-              <th style={thStyle}>Compliance Score</th>
-              <th style={thStyle}>Transactions</th>
-              <th style={thStyle}>Analyze</th>
-            </tr>
-          </thead>
-          <tbody>
-            {projects.map((p, idx) => {
-              const txCount = transactions.filter(t => t.projectId === p.id).length;
-              const score   = Math.round(p.complianceScore || 0);
-              const scoreColor = score >= 80 ? '#059669' : score >= 50 ? '#d97706' : '#dc2626';
-              const auditColors = {
-                DRAFT: { bg: '#f3f4f6', text: '#6b7280' }, IN_PROGRESS: { bg: '#dbeafe', text: '#1e40af' },
-                UNDER_REVIEW: { bg: '#fef3c7', text: '#92400e' }, SIGNED_OFF: { bg: '#d1fae5', text: '#065f46' },
-                CLOSED: { bg: '#e5e7eb', text: '#374151' }, COMPLIANT: { bg: '#d1fae5', text: '#065f46' },
-              };
-              const ac = auditColors[p.auditStatus] || { bg: '#f3f4f6', text: '#6b7280' };
-              return (
-                <tr key={p.id} style={{ borderBottom: '1px solid #f9fafb' }}>
-                  <td style={{ ...tdStyle, color: '#9ca3af' }}>{idx + 1}</td>
-                  <td style={tdStyle}>
-                    <div style={{ fontWeight: '600', color: '#111827' }}>{p.name}</div>
-                  </td>
-                  <td style={tdStyle}>{p.projectCode || '—'}</td>
-                  <td style={tdStyle}>
-                    <span style={{ padding: '0.2rem 0.6rem', borderRadius: '9999px', fontSize: '0.72rem', fontWeight: '600', backgroundColor: ac.bg, color: ac.text }}>
-                      {p.auditStatus || 'DRAFT'}
-                    </span>
-                  </td>
-                  <td style={{ ...tdStyle, color: scoreColor, fontWeight: '700' }}>{score}%</td>
-                  <td style={tdStyle}>{txCount}</td>
-                  <td style={tdStyle}>
-                    <button onClick={() => onSelect(p)} 
-                      style={{ backgroundColor: '#2563eb', color: 'white', border: 'none', padding: '0.4rem 1rem', borderRadius: '0.375rem', cursor: 'pointer', fontSize: '0.75rem', fontWeight: '600' }}>
-                      Analyze
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+    <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '2rem' }}>
+      {!selectedProject ? (
+        <>
+          <div style={{ marginBottom: '2rem' }}>
+            <h1 style={{ margin: 0, fontSize: '1.75rem', fontWeight: '800', color: '#0f172a' }}>Conduct Audit Analysis</h1>
+            <p style={{ margin: '0.25rem 0 0', color: '#64748b', fontSize: '0.95rem' }}>Perform automated compliance checks and AI-powered auditing.</p>
+          </div>
+          <ProjectListTable onSelectProject={setSelectedProject} />
+        </>
+      ) : (
+        <AnalysisDashboard 
+          project={selectedProject} 
+          onBack={() => setSelectedProject(null)} 
+        />
+      )}
     </div>
   );
-}
-
-export default function ConductAuditAnalysis() {
-  const [projects, setProjects] = useState([]);
-  const [transactions, setTransactions] = useState([]);
-  const [selectedProject, setSelectedProject] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const [pRes, tRes] = await Promise.all([
-        projectApi.getAll(),
-        transactionApi.getAll()
-      ]);
-      setProjects(pRes.data);
-      setTransactions(tRes.data);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (loading) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '300px', color: '#6b7280' }}>
-      Loading projects…
-    </div>
-  );
-
-  if (selectedProject) {
-    return <AnalysisDashboard project={selectedProject} onBack={() => setSelectedProject(null)} />;
-  }
-
-  return <ProjectsTable projects={projects} transactions={transactions} onSelect={setSelectedProject} />;
 }

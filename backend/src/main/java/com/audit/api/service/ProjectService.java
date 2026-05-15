@@ -91,4 +91,10 @@ public class ProjectService {
         if (updates.getStatus() != null) project.setStatus(updates.getStatus());
         return projectRepository.save(project);
     }
+
+    public Project updateAuditStatus(UUID id, String status) {
+        Project project = getProject(id);
+        project.setAuditStatus(status);
+        return projectRepository.save(project);
+    }
 }

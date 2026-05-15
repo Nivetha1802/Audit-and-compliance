@@ -24,11 +24,14 @@ export const projectApi = {
   create: (data) => api.post('/projects', data),
   update: (id, data) => api.put(`/projects/${id}`, data),
   delete: (id) => api.delete(`/projects/${id}`),
+  updateAuditStatus: (id, status) => api.patch(`/projects/${id}/audit-status?status=${status}`),
 };
 
 export const transactionApi = {
   getAll: () => api.get('/transactions'),
+  getLedgerTransactions: () => api.get('/transactions/ledger'),
   getByProject: (projectId) => api.get(`/transactions/project/${projectId}`),
+  getLedgerByProject: (projectId) => api.get(`/transactions/ledger/${projectId}`),
   importCsv: (formData) => api.post('/transactions/import', formData, {
     headers: { 'Content-Type': 'multipart/form-data' }
   }),
@@ -62,6 +65,8 @@ export const evidenceApi = {
   uploadByTransaction: (txId, formData) => api.post(`/evidence/upload-by-transaction/${txId}`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' }
   }),
+  delete: (id) => api.delete(`/tasks/${id}`),
+  cleanupTest: () => api.delete('/tasks/cleanup-test'),
   deleteItem: (id) => api.delete(`/evidence/checklist/${id}`),
   download: (docId) => `${API_URL}/documents/download/${docId}`,
 };

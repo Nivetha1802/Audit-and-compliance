@@ -387,7 +387,7 @@ function RiskCreationSection({ transaction, projectId, currentUser }) {
 }
 
 // ── MAIN COMPONENTS ────────────────────────────────────────────────────────
-function ProjectsTable({ projects, transactions, onSelect }) {
+function ProjectsTable({ projects, onSelect }) {
   const thStyle = { textAlign: 'left', padding: '0.75rem 1rem', fontSize: '0.75rem', color: '#6b7280', fontWeight: '600', borderBottom: '2px solid #e5e7eb', backgroundColor: '#f9fafb' };
   const tdStyle = { padding: '0.75rem 1rem', fontSize: '0.85rem', verticalAlign: 'middle' };
 
@@ -397,6 +397,7 @@ function ProjectsTable({ projects, transactions, onSelect }) {
         <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#111827', margin: 0 }}>📄 General Ledger Data</h1>
         <p style={{ color: '#6b7280', marginTop: '4px' }}>Select a project to view its general ledger transactions.</p>
       </div>
+
 
       <div style={{ backgroundColor: 'white', borderRadius: '12px', border: '1px solid #e5e7eb', overflow: 'hidden' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -453,11 +454,12 @@ function LedgerDetail({ project, onBack, currentUser, onEvidenceUpdate }) {
   const fetchTransactions = async () => {
     setLoading(true);
     try {
-      const res = await transactionApi.getByProject(project.id);
+      const res = await transactionApi.getLedgerByProject(project.id);
       setTransactions(res.data);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   };
+
 
   const onFileChange = (e) => {
     if (e.target.files[0]) {
@@ -639,11 +641,11 @@ function LedgerDetail({ project, onBack, currentUser, onEvidenceUpdate }) {
                 <th style={thStyle}>Date</th>
                 <th style={thStyle}>Txn No.</th>
                 <th style={thStyle}>Description</th>
+                <th style={thStyle}>Vendor</th>
                 <th style={thStyle}>Ledger</th>
                 <th style={thStyle}>D/C</th>
                 <th style={thStyle}>Amount</th>
                 <th style={thStyle}>Category</th>
-                <th style={thStyle}>Status</th>
               </tr>
             </thead>
             <tbody>
@@ -652,17 +654,13 @@ function LedgerDetail({ project, onBack, currentUser, onEvidenceUpdate }) {
                   <td style={tdStyle}>{tx.transactionDate}</td>
                   <td style={tdStyle}><code style={{ fontSize: '11px', backgroundColor: '#f3f4f6', padding: '2px 4px', borderRadius: '4px' }}>{tx.transactionNumber}</code></td>
                   <td style={tdStyle}>{tx.description}</td>
-                  <td style={tdStyle}>{tx.ledgerName}</td>
+                  <td style={tdStyle}>{tx.vendorName || tx.vendorCustomer || 'N/A'}</td>
+                  <td style={tdStyle}>{tx.ledgerName || 'N/A'}</td>
                   <td style={tdStyle}>{tx.debitCredit}</td>
                   <td style={tdStyle}>₹{tx.amount?.toLocaleString()}</td>
                   <td style={tdStyle}>
                     <span style={{ padding: '2px 8px', borderRadius: '999px', fontSize: '11px', fontWeight: '500', ...getCategoryColor(tx.categoryName) }}>
                       {tx.categoryName}
-                    </span>
-                  </td>
-                  <td style={tdStyle}>
-                    <span style={{ padding: '2px 8px', borderRadius: '999px', fontSize: '11px', fontWeight: '500', ...(STATUS_COLORS[tx.status] || { bg: '#f3f4f6', text: '#374151' }) }}>
-                      {tx.status}
                     </span>
                   </td>
                 </tr>
@@ -688,22 +686,22 @@ function LedgerDetail({ project, onBack, currentUser, onEvidenceUpdate }) {
 export default function GeneralLedger() {
   const { user: currentUser } = useAuth();
   const [projects, setProjects] = useState([]);
-  const [allTransactions, setAllTransactions] = useState([]);
   const [selectedProject, setSelectedProject] = useState(null);
+
 
   useEffect(() => { fetchData(); }, []);
 
   const fetchData = async () => {
     try {
-      const [projRes, txRes] = await Promise.all([ projectApi.getAll(), transactionApi.getAll() ]);
+      const projRes = await projectApi.getAll();
       setProjects(projRes.data);
-      setAllTransactions(txRes.data);
     } catch (err) { console.error(err); }
   };
+
 
   if (selectedProject) {
     return <LedgerDetail project={selectedProject} onBack={() => setSelectedProject(null)} currentUser={currentUser} onEvidenceUpdate={fetchData} />;
   }
 
-  return <ProjectsTable projects={projects} transactions={allTransactions} onSelect={setSelectedProject} />;
+  return <ProjectsTable projects={projects} onSelect={setSelectedProject} />;
 }

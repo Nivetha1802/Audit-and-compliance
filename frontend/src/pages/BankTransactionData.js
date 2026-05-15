@@ -631,7 +631,7 @@ function BankDetail({ project, onBack, currentUser, onEvidenceUpdate }) {
               {transactions.map(tx => (
                 <tr key={tx.id} style={{ backgroundColor: selectedTransaction?.id === tx.id ? '#f0f7ff' : 'transparent' }}>
                   <td style={tdStyle}>{tx.transactionDate}</td>
-                  <td style={tdStyle}><code style={{ fontSize: '11px', backgroundColor: '#f3f4f6', padding: '2px 4px', borderRadius: '4px' }}>{tx.referenceNo}</code></td>
+                  <td style={tdStyle}><code style={{ fontSize: '11px', backgroundColor: '#f3f4f6', padding: '2px 4px', borderRadius: '4px' }}>{tx.bankRefNo || tx.referenceNo || 'N/A'}</code></td>
                   <td style={tdStyle}>{tx.description}</td>
                   <td style={tdStyle}>{tx.debitCredit}</td>
                   <td style={tdStyle}>₹{tx.amount?.toLocaleString()}</td>

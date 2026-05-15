@@ -28,7 +28,7 @@ public class DocumentService {
         this.securityUtils = securityUtils;
     }
 
-    public Document uploadDocument(MultipartFile file) throws Exception {
+    public Document uploadDocument(MultipartFile file, UUID transactionId) throws Exception {
         UUID orgId = securityUtils.getCurrentOrganizationId();
         String fileName = UUID.randomUUID().toString() + "_" + file.getOriginalFilename();
         Path filePath = Paths.get(uploadDir, orgId.toString(), fileName);
@@ -37,6 +37,7 @@ public class DocumentService {
         Files.copy(file.getInputStream(), filePath);
 
         Document document = Document.builder()
+                .transactionId(transactionId)
                 .fileName(file.getOriginalFilename())
                 .filePath(filePath.toString())
                 .fileType(file.getContentType())
@@ -45,6 +46,10 @@ public class DocumentService {
         document.setOrganizationId(orgId);
 
         return documentRepository.save(document);
+    }
+
+    public Document uploadDocument(MultipartFile file) throws Exception {
+        return uploadDocument(file, null);
     }
 
     public Document getDocument(UUID id) {

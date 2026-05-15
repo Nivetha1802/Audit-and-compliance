@@ -8,7 +8,8 @@ import {
   X,
   User,
   MessageSquare,
-  Send
+  Send,
+  Plus
 } from 'lucide-react';
 import { taskApi, userApi, projectApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -155,6 +156,77 @@ const TaskDetailModal = ({
   );
 };
 
+const CreateTaskModal = ({ 
+  isOpen, 
+  onClose, 
+  users, 
+  projects, 
+  handleCreate 
+}) => {
+  const [formData, setFormData] = useState({
+    title: '',
+    description: '',
+    assignedTo: '',
+    projectId: '',
+    priority: 'MEDIUM'
+  });
+
+  if (!isOpen) return null;
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    handleCreate(formData);
+    setFormData({ title: '', description: '', assignedTo: '', projectId: '', priority: 'MEDIUM' });
+  };
+
+  return (
+    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' }} onClick={onClose}>
+      <div style={{ backgroundColor: 'white', borderRadius: '12px', width: '100%', maxWidth: '500px', padding: '24px' }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+          <h2 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0 }}>Create New Task</h2>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}><X size={24} /></button>
+        </div>
+        <form onSubmit={handleSubmit}>
+          <div style={{ marginBottom: '16px' }}>
+            <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>Title</label>
+            <input required value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #e2e8f0' }} placeholder="Task title" />
+          </div>
+          <div style={{ marginBottom: '16px' }}>
+            <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>Description</label>
+            <textarea required value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', minHeight: '100px' }} placeholder="Task description" />
+          </div>
+          <div style={{ marginBottom: '16px' }}>
+            <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>Project</label>
+            <select required value={formData.projectId} onChange={e => setFormData({...formData, projectId: e.target.value})} style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <option value="">Select Project</option>
+              {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+          <div style={{ marginBottom: '16px' }}>
+            <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>Assign To</label>
+            <select required value={formData.assignedTo} onChange={e => setFormData({...formData, assignedTo: e.target.value})} style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <option value="">Select User</option>
+              {users.map(u => <option key={u.id} value={u.id}>{u.fullName}</option>)}
+            </select>
+          </div>
+          <div style={{ marginBottom: '24px' }}>
+            <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>Priority</label>
+            <select value={formData.priority} onChange={e => setFormData({...formData, priority: e.target.value})} style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <option value="LOW">Low</option>
+              <option value="MEDIUM">Medium</option>
+              <option value="HIGH">High</option>
+            </select>
+          </div>
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <button type="button" onClick={onClose} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer' }}>Cancel</button>
+            <button type="submit" style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: '#2563eb', color: 'white', fontWeight: 'bold', cursor: 'pointer' }}>Create Task</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
 export default function Tasks() {
   const { user } = useAuth();
   const location = useLocation();
@@ -165,6 +237,7 @@ export default function Tasks() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTask, setSelectedTask] = useState(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [comments, setComments] = useState([]);
   const [newComment, setNewComment] = useState('');
   const [loadingComments, setLoadingComments] = useState(false);
@@ -245,6 +318,17 @@ export default function Tasks() {
     }
   };
 
+  const handleCreateTask = async (formData) => {
+    try {
+      await taskApi.create(formData);
+      setIsCreateModalOpen(false);
+      fetchData();
+    } catch (error) {
+      console.error('Error creating task:', error);
+      alert(error.response?.data?.message || 'Failed to create task');
+    }
+  };
+
   const filteredTasks = tasks.filter(task => {
     return task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
            task.description.toLowerCase().includes(searchQuery.toLowerCase());
@@ -258,6 +342,26 @@ export default function Tasks() {
         <div>
           <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#1e293b', margin: 0 }}>Tasks</h1>
           <p style={{ color: '#64748b', marginTop: '4px' }}>Manage and track mitigation actions</p>
+        </div>
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <button 
+            onClick={() => setIsCreateModalOpen(true)}
+            style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '8px', 
+              backgroundColor: '#2563eb', 
+              color: 'white', 
+              padding: '10px 16px', 
+              borderRadius: '8px', 
+              border: 'none', 
+              fontWeight: '600', 
+              cursor: 'pointer' 
+            }}
+          >
+            <Plus size={20} />
+            Create Task
+          </button>
         </div>
       </div>
       <div style={{ display: 'flex', gap: '16px', marginBottom: '24px' }}>
@@ -299,7 +403,12 @@ export default function Tasks() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>{getStatusIcon(task.status)}<span style={{ fontSize: '14px', fontWeight: '500' }}>{task.status}</span></div>
                 </td>
                 <td style={{ padding: '16px', textAlign: 'right' }}>
-                  <button onClick={() => { setSelectedTask(task); setIsViewModalOpen(true); }} style={{ backgroundColor: '#2563eb', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '13px', cursor: 'pointer' }}>View Details</button>
+                  <button 
+                    onClick={() => { setSelectedTask(task); setIsViewModalOpen(true); }}
+                    style={{ backgroundColor: '#2563eb', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '13px', cursor: 'pointer' }}
+                  >
+                    View
+                  </button>
                 </td>
               </tr>
             ))}
@@ -309,6 +418,13 @@ export default function Tasks() {
       {isViewModalOpen && (
         <TaskDetailModal selectedTask={selectedTask} users={users} projects={projects} user={user} onClose={() => setIsViewModalOpen(false)} handleStatusChange={handleStatusChange} loadingComments={loadingComments} comments={comments} handleAddComment={handleAddComment} newComment={newComment} setNewComment={setNewComment} />
       )}
+      <CreateTaskModal 
+        isOpen={isCreateModalOpen} 
+        onClose={() => setIsCreateModalOpen(false)} 
+        users={users} 
+        projects={projects} 
+        handleCreate={handleCreateTask} 
+      />
     </div>
   );
 }

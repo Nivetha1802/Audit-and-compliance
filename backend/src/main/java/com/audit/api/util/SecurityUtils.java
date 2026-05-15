@@ -31,4 +31,8 @@ public class SecurityUtils {
         return userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
     }
+
+    public UUID getCurrentUserId() {
+        return getCurrentUser().getId();
+    }
 }

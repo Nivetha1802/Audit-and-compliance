@@ -48,6 +48,14 @@ public class ProjectController {
         return ResponseEntity.ok(projectService.updateProject(id, project));
     }
 
+    @PatchMapping("/{id}/audit-status")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('AUDITOR')")
+    public ResponseEntity<Project> updateAuditStatus(
+            @PathVariable UUID id,
+            @RequestParam String status) {
+        return ResponseEntity.ok(projectService.updateAuditStatus(id, status));
+    }
+
     /** Advance audit status: DRAFT → IN_PROGRESS → UNDER_REVIEW → SIGNED_OFF */
     @PostMapping("/{id}/advance-audit")
     @PreAuthorize("hasRole('ADMIN') or hasRole('AUDITOR')")

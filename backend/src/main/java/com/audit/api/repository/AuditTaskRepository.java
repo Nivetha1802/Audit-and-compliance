@@ -24,4 +24,6 @@ public interface AuditTaskRepository extends JpaRepository<AuditTask, UUID> {
     @Modifying
     @Transactional
     void deleteByRiskId(UUID riskId);
+
+    List<AuditTask> findByTitleContainingIgnoreCaseOrDescriptionContainingIgnoreCase(String title, String description);
 }

@@ -25,13 +25,24 @@ public class TransactionController {
 
     @GetMapping
     public ResponseEntity<List<Transaction>> getAllTransactions() {
-        return ResponseEntity.ok(transactionService.getAllTransactions());
+        return ResponseEntity.ok(transactionService.populateVendorNames(transactionService.getAllTransactions()));
     }
 
     @GetMapping("/project/{projectId}")
     public ResponseEntity<List<Transaction>> getByProject(@PathVariable UUID projectId) {
-        return ResponseEntity.ok(transactionService.getTransactionsByProject(projectId));
+        return ResponseEntity.ok(transactionService.populateVendorNames(transactionService.getTransactionsByProject(projectId)));
     }
+
+    @GetMapping("/ledger")
+    public ResponseEntity<List<Transaction>> getAllLedgerTransactions() {
+        return ResponseEntity.ok(transactionService.populateVendorNames(transactionService.getAllLedgerTransactions()));
+    }
+
+    @GetMapping("/ledger/{projectId}")
+    public ResponseEntity<List<Transaction>> getLedgerByProject(@PathVariable UUID projectId) {
+        return ResponseEntity.ok(transactionService.populateVendorNames(transactionService.getLedgerTransactionsByProject(projectId)));
+    }
+
 
     @PostMapping("/import")
     @PreAuthorize("hasRole('ADMIN') or hasRole('AUDITOR')")
@@ -68,6 +79,14 @@ public class TransactionController {
         return ResponseEntity.ok(transactionService.updateStatus(id, status));
     }
 
+    @PatchMapping("/{id}/audit-status")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('AUDITOR')")
+    public ResponseEntity<Transaction> updateAuditStatus(
+            @PathVariable UUID id, 
+            @RequestParam String status) {
+        return ResponseEntity.ok(transactionService.updateAuditStatus(id, status));
+    }
+
     @PatchMapping("/{id}/link-vendor")
     public ResponseEntity<Transaction> linkVendor(
             @PathVariable UUID id,
@@ -77,10 +96,7 @@ public class TransactionController {
 
     @PostMapping("/{id}/auto-link-vendor")
     public ResponseEntity<Transaction> autoLinkVendor(@PathVariable UUID id) {
-        Transaction tx = transactionService.getAllTransactions().stream()
-                .filter(t -> t.getId().equals(id))
-                .findFirst()
-                .orElseThrow(() -> new RuntimeException("Transaction not found"));
+        Transaction tx = transactionService.getTransactionById(id);
         transactionService.autoLinkVendor(tx, tx.getOrganizationId());
         return ResponseEntity.ok(transactionService.linkVendor(tx.getId(), tx.getVendorId()));
     }

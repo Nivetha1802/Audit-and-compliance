@@ -29,7 +29,6 @@ export default function EvidenceManagement() {
   const [projects, setProjects] = useState([]);
   const [selectedProject, setSelectedProject] = useState(null);
   const [transactions, setTransactions] = useState([]);
-  const [allTransactions, setAllTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -43,12 +42,8 @@ export default function EvidenceManagement() {
   const fetchInitialData = async () => {
     try {
       setLoading(true);
-      const [projectsRes, transactionsRes] = await Promise.all([
-        projectApi.getAll(),
-        transactionApi.getAll()
-      ]);
+      const projectsRes = await projectApi.getAll();
       setProjects(projectsRes.data);
-      setAllTransactions(transactionsRes.data);
     } catch (error) {
       console.error('Error fetching initial data:', error);
     } finally {
@@ -65,22 +60,29 @@ export default function EvidenceManagement() {
   const fetchProjectTransactions = async () => {
     try {
       setLoading(true);
-      const response = await transactionApi.getAll();
-      const projectTxs = response.data.filter(tx => tx.projectId === selectedProject.id);
-      setTransactions(projectTxs);
+      // Only fetch ledger transactions — bank statement entries are excluded
+      const response = await transactionApi.getLedgerByProject(selectedProject.id);
+      setTransactions(response.data);
     } catch (error) {
       console.error('Error fetching transactions:', error);
     } finally {
       setLoading(false);
     }
   };
+  useEffect(() => {
+    if (selectedTransaction) {
+      const updated = transactions.find(t => t.id === selectedTransaction.id);
+      if (updated) setSelectedTransaction(updated);
+    }
+  }, [transactions]);
+
 
   const handleOpenSidebar = (tx) => {
     setSelectedTransaction(tx);
     setIsSidebarOpen(true);
   };
 
-  const filteredProjects = projects.filter(p => 
+  const filteredProjects = projects.filter(p =>
     p.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
@@ -146,7 +148,6 @@ export default function EvidenceManagement() {
             </thead>
             <tbody>
               {filteredProjects.map((project, idx) => {
-                const projectTxs = allTransactions.filter(t => t.projectId === project.id);
                 return (
                   <tr key={project.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
                     <td style={tdStyle}>{idx + 1}</td>
@@ -164,7 +165,7 @@ export default function EvidenceManagement() {
                         <span>{project.auditStatus || 'READY'}</span>
                       </div>
                     </td>
-                    <td style={tdStyle}>{projectTxs.length} items</td>
+                    <td style={tdStyle}>—</td>
                     <td style={{...tdStyle, textAlign: 'right'}}>
                       <button 
                         onClick={() => setSelectedProject(project)}
@@ -250,7 +251,9 @@ export default function EvidenceManagement() {
               <tr>
                 <th style={thStyle}>Date</th>
                 <th style={thStyle}>Txn No.</th>
+                <th style={thStyle}>Status</th>
                 <th style={thStyle}>Description</th>
+                <th style={thStyle}>Vendor</th>
                 <th style={thStyle}>Ledger</th>
                 <th style={thStyle}>D/C</th>
                 <th style={thStyle}>Amount</th>
@@ -263,8 +266,22 @@ export default function EvidenceManagement() {
               {filteredTransactions.map((tx) => (
                 <tr key={tx.id} style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: selectedTransaction?.id === tx.id ? '#f0f7ff' : 'transparent' }}>
                   <td style={tdStyle}>{tx.transactionDate}</td>
-                  <td style={tdStyle}>{tx.referenceNo}</td>
+                  <td style={tdStyle}><code style={{ fontSize: '11px', backgroundColor: '#f3f4f6', padding: '2px 4px', borderRadius: '4px' }}>{tx.transactionNumber}</code></td>
+                  <td style={tdStyle}>
+                    <span style={{
+                      ...badgeStyle,
+                      backgroundColor: 
+                        tx.complianceStatus === 'COMPLIANT' ? '#dcfce7' : 
+                        tx.complianceStatus === 'PENDING_EVIDENCE' ? '#fef3c7' : '#fee2e2',
+                      color: 
+                        tx.complianceStatus === 'COMPLIANT' ? '#166534' : 
+                        tx.complianceStatus === 'PENDING_EVIDENCE' ? '#92400e' : '#991b1b'
+                    }}>
+                      {(tx.complianceStatus || 'PENDING_EVIDENCE').replace('_', ' ')}
+                    </span>
+                  </td>
                   <td style={tdStyle}>{tx.description}</td>
+                  <td style={tdStyle}>{tx.vendorCustomer || 'N/A'}</td>
                   <td style={tdStyle}>{tx.ledgerName || 'Main Ledger'}</td>
                   <td style={tdStyle}>{tx.debitCredit}</td>
                   <td style={tdStyle}>${tx.amount?.toLocaleString()}</td>

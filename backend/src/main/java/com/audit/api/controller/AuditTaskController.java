@@ -63,4 +63,15 @@ public class AuditTaskController {
         UUID userId = (userIdStr != null) ? UUID.fromString(userIdStr) : null;
         return auditTaskService.addComment(id, payload.get("comment"), userId);
     }
+
+    @DeleteMapping("/{id}")
+    public void deleteTask(@PathVariable UUID id) {
+        auditTaskService.deleteTask(id);
+    }
+
+    @DeleteMapping("/cleanup-test")
+    public Map<String, Object> cleanupTestTasks() {
+        int deletedCount = auditTaskService.deleteTestTasks();
+        return Map.of("success", true, "deletedCount", deletedCount);
+    }
 }
